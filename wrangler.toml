@@ -1,0 +1,17 @@
+# Dscribe – AI Second Brain (Cloudflare Workers + D1)
+name = "dscribe"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# デプロイ先URL例: https://dscribe.<あなたのサブドメイン>.workers.dev
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dscribe-db"
+# setup.sh が自動で書き換えます。手動の場合は `npx wrangler d1 create dscribe-db` の出力のIDを貼り付け
+database_id = "REPLACE_WITH_DATABASE_ID"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true
