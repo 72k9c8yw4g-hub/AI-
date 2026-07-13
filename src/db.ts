@@ -99,6 +99,20 @@ function normTags(tags: unknown): string {
   return "";
 }
 
+// ---------- 設定 (settings) ----------
+
+export async function getSetting(db: D1Database, key: string): Promise<string | null> {
+  const row = await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{ value: string }>();
+  return row ? row.value : null;
+}
+
+export async function setSetting(db: D1Database, key: string, value: string): Promise<void> {
+  await db
+    .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .bind(key, value)
+    .run();
+}
+
 // ---------- ユーザー / アカウント ----------
 
 export const MAX_USERS = 100;
@@ -118,20 +132,27 @@ export async function getUserByToken(db: D1Database, token: string | null | unde
   return await db.prepare("SELECT id, email, token, is_owner, created_at FROM users WHERE token = ?").bind(token).first<UserRow>();
 }
 
-export async function createUser(db: D1Database, emailRaw: unknown): Promise<UserRow> {
+export async function countUsers(db: D1Database): Promise<number> {
+  const row = await db.prepare("SELECT COUNT(*) AS c FROM users").first<{ c: number }>();
+  return row?.c ?? 0;
+}
+
+export async function createUser(db: D1Database, emailRaw: unknown, isOwner = false): Promise<UserRow> {
   if (!validEmail(emailRaw)) throw new Error("メールアドレスの形式が正しくありません");
   const email = emailRaw.trim().toLowerCase();
-  const count = await db.prepare("SELECT COUNT(*) AS c FROM users").first<{ c: number }>();
-  if ((count?.c ?? 0) >= MAX_USERS) throw new Error("登録上限に達しています。管理者に連絡してください");
+  if ((await countUsers(db)) >= MAX_USERS) throw new Error("登録上限に達しています。管理者に連絡してください");
   const exists = await db.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
   if (exists) throw new Error("このメールアドレスは登録済みです。URLが分からない場合は招待してくれた人(管理者)に再発行を依頼してください");
   const token = genToken();
-  const res = await db.prepare("INSERT INTO users (email, token) VALUES (?, ?)").bind(email, token).run();
+  const res = await db
+    .prepare("INSERT INTO users (email, token, is_owner) VALUES (?, ?, ?)")
+    .bind(email, token, isOwner ? 1 : 0)
+    .run();
   return {
     id: Number(res.meta.last_row_id),
     email,
     token,
-    is_owner: 0,
+    is_owner: isOwner ? 1 : 0,
     created_at: new Date().toISOString(),
   };
 }

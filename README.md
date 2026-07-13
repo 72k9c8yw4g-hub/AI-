@@ -36,9 +36,26 @@ Mem / Tana / Fabric のような AI セカンドブレインを、**完全に独
 
 > ⚠️ **正直な注意点**: claude.ai の仕様上、コネクタが裏側で勝手に全チャットを同期し続けることはできません(コネクタは会話中にツールとして呼ばれたときだけ動きます)。そのため「過去分はエクスポート取込」「今後の分は会話中の自動保存」という2段構えです。ときどきエクスポートを再取込すると、チャット履歴側も最新になります(同じチャットは上書き更新)。
 
-## セットアップ(約5分・無料)— 最初の1人(オーナー)だけ
+## セットアップ(無料)— 最初の1人(オーナー)だけ
 
-必要なもの: [Node.js](https://nodejs.org) v18以上 / [Cloudflare 無料アカウント](https://dash.cloudflare.com/sign-up)
+必要なもの: [Cloudflare 無料アカウント](https://dash.cloudflare.com/sign-up)(メールアドレスだけで作れます)
+
+### パターンA: スマホ(iPhone/Android)だけで導入 📱
+
+PC不要。全部ブラウザ(Safari等)で完結します。
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/72k9c8yw4g-hub/AI-)
+
+1. **このリポジトリを Public にする**(GitHub → リポジトリ → Settings → 一番下 Danger Zone → Change visibility)
+   ※上のボタンは公開リポジトリでのみ動きます
+2. 上の **Deploy to Cloudflare ボタン**をタップ → Cloudflare にログイン(無ければ無料登録)→ GitHub を連携
+3. 画面の指示どおり進めると、**D1データベースも自動作成**されてデプロイされます(数分)
+4. デプロイされた Worker のURL(`https://….workers.dev`)を開く → **初期設定ページ**が出るので、メールアドレスを入れて登録
+5. あなた専用の「ダッシュボードURL」「コネクタ用URL」「招待リンク」が発行される → 必ずブックマーク
+
+### パターンB: PCで5分 💻
+
+[Node.js](https://nodejs.org) v18以上が必要です。
 
 ```bash
 git clone <このリポジトリ>
@@ -46,14 +63,17 @@ cd <リポジトリ名>
 bash setup.sh
 ```
 
-`setup.sh` が全部やります(ログイン → DB作成 → デプロイ → オーナーアカウント作成 → 招待コード発行)。
-最後に表示される **3つのURL** を控えてください:
+デプロイ後に表示されるURLをブラウザで開き、初期設定(メールアドレス登録)すれば完了。
+オーナーURLを無くしたときは `bash setup.sh reset-owner` で再発行できます。
 
-1. **あなたのダッシュボード** `https://…workers.dev/app/<トークン>`(ブックマーク必須)
-2. **あなたのコネクタ用URL** `https://…workers.dev/mcp/<トークン>`
-3. **招待リンク** `https://…workers.dev/join/<コード>`(入れたい人にだけ渡す)
+<details>
+<summary>リポジトリを Public にしたくない場合(手動・ブラウザのみ)</summary>
 
-※`setup.sh` を再実行するとオーナーURLと招待リンクは新しくなります(メンバーのURLはそのまま)。
+1. Cloudflare ダッシュボード → **Storage & Databases → D1** → `dscribe-db` という名前でデータベース作成 → IDをコピー
+2. GitHub のファイル編集画面で `wrangler.toml` の `REPLACE_WITH_DATABASE_ID` を貼り替えてコミット
+3. Cloudflare ダッシュボード → **Workers & Pages → 作成 → GitHubに接続** でこのリポジトリを選んでデプロイ
+4. Worker のURLを開いて初期設定
+</details>
 
 ### ① Claude にコネクタとして追加
 
@@ -103,12 +123,8 @@ claude mcp add --transport http dscribe https://<あなたのURL>/mcp/<トーク
 ## ローカル開発
 
 ```bash
-cp .dev.vars.example .dev.vars    # INVITE_CODE=dev-invite
 npm install
-npm run migrate:local
-npm run seed:local                # オーナー(owner@local / dev-token)を作成
-npm run dev                       # http://localhost:8787/app/dev-token
-                                  # 登録ページ: http://localhost:8787/join/dev-invite
+npm run dev     # http://localhost:8787 を開くと初期設定ページ(テーブルは自動作成)
 ```
 
 ## セキュリティと料金
@@ -124,7 +140,7 @@ npm run dev                       # http://localhost:8787/app/dev-token
 - **Q. チャットで話したのに保存されてない**
   A. パーソナル設定(上記②)を貼っているか確認。または「これ覚えといて」と言えば確実に保存されます。
 - **Q. URLを無くした**
-  A. オーナーに依頼 → 設定タブの 🔑 で再発行。オーナー自身が無くした場合は `setup.sh` を再実行(オーナーURLが再発行されます)。
+  A. オーナーに依頼 → 設定タブの 🔑 で再発行。オーナー自身が無くした場合は `bash setup.sh reset-owner`(PCが必要)。
 - **Q. 取り込みをやり直したい**
   A. もう一度同じファイルを取り込めばOK(同じチャットは上書き)。
 - **Q. スマホからも使える?**

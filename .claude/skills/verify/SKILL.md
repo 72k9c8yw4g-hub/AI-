@@ -8,17 +8,17 @@ description: Dscribe (Cloudflare Workers + D1) をローカルで起動して MC
 ## 起動
 
 ```bash
-cp .dev.vars.example .dev.vars                      # INVITE_CODE=dev-invite
 npm install
-npx wrangler d1 migrations apply dscribe-db --local
-npm run seed:local                                  # オーナー owner@local / dev-token を作成
-npx wrangler dev --port 8787                        # バックグラウンド推奨
+rm -rf .wrangler                 # まっさらな状態から検証する場合
+npx wrangler dev --port 8787     # バックグラウンド推奨。テーブルは初回リクエストで自動作成される
 ```
 
 - wrangler.toml の database_id がプレースホルダのままでもローカルは動く(リモートのみ必要)
-- 起動確認: `curl -s http://localhost:8787/` が HTML を返せばOK
-- マルチアカウント: `POST /join/dev-invite` に `{"email":"a@example.com"}` で新規ユーザー作成。
-  返ってきたトークンで2ユーザー目として操作し、**ユーザー間でデータが見えないこと**を必ず確認する
+- 初期設定: `curl -s -X POST http://localhost:8787/setup -H 'Content-Type: application/json' -d '{"email":"owner@example.com"}'`
+  → app_url / mcp_url / join_url が返る。トークンはこのレスポンスから取る(2回目以降は403)
+- ユーザー0人のとき `GET /` は初期設定ページ、1人以上いれば通常ランディングになること
+- マルチアカウント: join_url に `{"email":"a@example.com"}` を POST して2人目を作成。
+  **ユーザー間でデータが見えないこと**を必ず確認する
   (Aで save_memory → Bの search/recall_context に出ない、Bのidを get_item しても見つからない)
 
 ## MCP エンドポイントの駆動 (Claude コネクタ相当)

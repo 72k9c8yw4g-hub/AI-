@@ -8,11 +8,16 @@
 // 各ユーザーのデータは user_id で完全分離。トークンはユーザーごとに独立。
 
 import { handleMcpRequest } from "./mcp";
-import { renderApp, renderLanding, renderJoinPage } from "./ui";
+import { renderApp, renderLanding, renderJoinPage, renderSetupPage } from "./ui";
 import { importConversations, importProjects } from "./importer";
+import { ensureSchema } from "./schema";
 import {
   getUserByToken,
   createUser,
+  countUsers,
+  genToken,
+  getSetting,
+  setSetting,
   listUsers,
   resetUserToken,
   deleteUserCascade,
@@ -36,7 +41,14 @@ import {
 
 export interface Env {
   DB: D1Database;
-  INVITE_CODE: string;
+  // 招待コード。通常は初期設定時に自動生成して DB (settings) に保存される。
+  // 環境変数/Secret で固定したい場合のみ設定(設定されていれば DB より優先)
+  INVITE_CODE?: string;
+}
+
+// 有効な招待コード(環境変数 > DB設定)
+async function effectiveInviteCode(env: Env): Promise<string | null> {
+  return env.INVITE_CODE || (await getSetting(env.DB, "invite_code"));
 }
 
 async function sha256Hex(s: string): Promise<string> {
@@ -75,11 +87,12 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
 
   // GET /me … ログイン中アカウント情報(オーナーには招待リンクも返す)
   if (head === "me" && method === "GET") {
+    const invite = user.is_owner ? await effectiveInviteCode(env) : null;
     return json({
       id: user.id,
       email: user.email,
       is_owner: !!user.is_owner,
-      join_url: user.is_owner && env.INVITE_CODE ? `${url.origin}/join/${env.INVITE_CODE}` : null,
+      join_url: invite ? `${url.origin}/join/${invite}` : null,
     });
   }
 
@@ -227,15 +240,46 @@ export default {
     const url = new URL(req.url);
     const seg = url.pathname.split("/").filter(Boolean);
 
+    // テーブルは初回アクセス時に自動作成(CLI不要でブラウザだけで導入できるように)
+    await ensureSchema(env.DB);
+
     if (seg.length === 0) {
+      // まだ誰も登録されていなければ初期設定ページ(オーナー登録)を表示
+      if ((await countUsers(env.DB)) === 0) return html(renderSetupPage());
       return html(renderLanding());
     }
 
     const [area, token, ...rest] = seg;
 
+    // 初期設定(最初の1人 = オーナーの作成)。ユーザーが存在する間は無効
+    if (area === "setup" && req.method === "POST") {
+      if ((await countUsers(env.DB)) > 0) return json({ error: "既にセットアップ済みです" }, 403);
+      try {
+        const body = (await req.json()) as { email?: unknown };
+        const owner = await createUser(env.DB, body.email, true);
+        let invite = await effectiveInviteCode(env);
+        if (!invite) {
+          invite = genToken().slice(0, 32);
+          await setSetting(env.DB, "invite_code", invite);
+        }
+        return json(
+          {
+            email: owner.email,
+            app_url: `${url.origin}/app/${owner.token}`,
+            mcp_url: `${url.origin}/mcp/${owner.token}`,
+            join_url: `${url.origin}/join/${invite}`,
+          },
+          201
+        );
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+      }
+    }
+
     // 新規登録(招待リンクを知っている人のみ)
     if (area === "join") {
-      if (!(await secretOk(env.INVITE_CODE, token))) {
+      const invite = await effectiveInviteCode(env);
+      if (!(await secretOk(invite ?? undefined, token))) {
         return html(renderLanding(), 404);
       }
       if (req.method === "GET") return html(renderJoinPage());

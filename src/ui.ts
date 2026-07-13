@@ -390,6 +390,78 @@ export function renderLanding(): string {
 <p style="color:#9aa0a6">新規登録には招待リンクが必要です。URLを無くした場合は管理者(招待した人)に再発行を依頼してください。</p></div></body></html>`;
 }
 
+export function renderSetupPage(): string {
+  return `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+<title>Dscribe – 初期設定</title>
+<style>
+:root{ --bg:#f5f6f8; --panel:#ffffff; --text:#1a1d21; --sub:#6b7280; --line:#e5e7eb; --accent:#6c5ce7; --accent2:#00b894; --danger:#e74c3c; --chip:#eef0f4; }
+@media (prefers-color-scheme: dark){ :root{ --bg:#101216; --panel:#181b21; --text:#e8eaed; --sub:#9aa0a6; --line:#2a2e36; --chip:#232730; } }
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;line-height:1.7;display:grid;place-items:center;min-height:100vh;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;max-width:600px;width:100%}
+h1{font-size:20px;margin:0 0 4px} .sub{color:var(--sub);font-size:13px}
+input{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:15px;margin:14px 0 10px}
+button.primary{width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;cursor:pointer}
+pre.code{background:var(--chip);border-radius:8px;padding:12px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all}
+button.copy{background:none;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;margin-bottom:10px}
+.err{color:var(--danger);margin-top:8px} .ok{color:var(--accent2)}
+.warn{background:var(--chip);border-radius:10px;padding:10px 12px;font-size:13px;margin-top:14px}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="card">
+  <div style="font-size:40px;text-align:center">🧠</div>
+  <h1>Dscribe – 初期設定(オーナー登録)</h1>
+  <div class="sub">デプロイ成功です!あなた(オーナー)のメールアドレスを登録して、専用URLを発行します。この画面は最初の1回だけ表示されます。</div>
+  <div id="form">
+    <input type="email" id="email" placeholder="あなたのメールアドレス" autocomplete="email">
+    <button class="primary" onclick="setup()">オーナーとして登録する</button>
+    <div id="msg"></div>
+  </div>
+  <div id="done" style="display:none"></div>
+</div>
+<script>
+"use strict";
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function el(id){ return document.getElementById(id); }
+function copyText(id){ navigator.clipboard.writeText(el(id).textContent).then(function(){ alert("コピーしました"); }); }
+document.getElementById("email").addEventListener("keydown", function(e){ if(e.key === "Enter") setup(); });
+function setup(){
+  var email = el("email").value.trim();
+  if(!email){ el("msg").innerHTML = '<div class="err">メールアドレスを入力してください</div>'; return; }
+  el("msg").textContent = "登録中…";
+  fetch("/setup", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email:email}) })
+    .then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error || ("HTTP "+r.status)); return j; }); })
+    .then(function(r){
+      el("form").style.display = "none";
+      var d = el("done");
+      d.style.display = "";
+      d.innerHTML = '<p class="ok"><b>✅ 設定完了!</b>(' + esc(r.email) + ')</p>'
+        + '<p><b>① あなたのダッシュボード</b>(ブックマーク必須):</p>'
+        + '<pre class="code" id="appUrl">' + esc(r.app_url) + '</pre>'
+        + '<button class="copy" onclick="copyText(\\'appUrl\\')">コピー</button>'
+        + '<p><b>② Claude コネクタ用URL</b>(claude.ai → 設定 → コネクタ → カスタムコネクタを追加):</p>'
+        + '<pre class="code" id="mcpUrl">' + esc(r.mcp_url) + '</pre>'
+        + '<button class="copy" onclick="copyText(\\'mcpUrl\\')">コピー</button>'
+        + '<p><b>③ 招待リンク</b>(他の人を入れたいときにだけ渡す。あなた専用データとは完全に分離されます):</p>'
+        + '<pre class="code" id="joinUrl">' + esc(r.join_url) + '</pre>'
+        + '<button class="copy" onclick="copyText(\\'joinUrl\\')">コピー</button>'
+        + '<div class="warn">⚠ ①②はあなたの<b>ログイン情報そのもの</b>です。必ずブックマークし、他人に教えないでください(③は後からダッシュボードの ⚙️設定 タブでも確認できます)。</div>'
+        + '<p style="margin-top:14px"><a href="' + esc(r.app_url) + '">→ ダッシュボードを開く</a></p>';
+    })
+    .catch(function(e){ el("msg").innerHTML = '<div class="err">' + esc(e.message) + '</div>'; });
+}
+</script>
+</body>
+</html>`;
+}
+
 export function renderJoinPage(): string {
   return `<!doctype html>
 <html lang="ja">
