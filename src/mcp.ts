@@ -38,7 +38,7 @@ interface ToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  handler: (db: D1Database, args: Record<string, unknown>) => Promise<string>;
+  handler: (db: D1Database, userId: number, args: Record<string, unknown>) => Promise<string>;
 }
 
 const str = (desc: string) => ({ type: "string", description: desc });
@@ -67,8 +67,8 @@ const TOOLS: ToolDef[] = [
       type: "object",
       properties: { project: str("プロジェクト名で絞り込み(省略可)") },
     },
-    handler: async (db, args) => {
-      const ov = await getOverview(db, typeof args.project === "string" && args.project.trim() ? args.project.trim() : undefined);
+    handler: async (db, userId, args) => {
+      const ov = await getOverview(db, userId, typeof args.project === "string" && args.project.trim() ? args.project.trim() : undefined);
       const lines: string[] = [];
       lines.push(`# 🧠 Dscribe – 現在の状況${ov.projectFilter ? `(プロジェクト: ${ov.projectFilter})` : ""}`);
       lines.push(
@@ -132,8 +132,8 @@ const TOOLS: ToolDef[] = [
       },
       required: ["query"],
     },
-    handler: async (db, args) => {
-      const { results } = await searchAll(db, args);
+    handler: async (db, userId, args) => {
+      const { results } = await searchAll(db, userId, args);
       const total = results.memories.length + results.tasks.length + results.chats.length;
       if (!total) return "該当なし。キーワードを変えるか、短い単語で再検索してください。";
       const lines: string[] = [`検索結果: ${total}件(全文は get_item で取得可能)`];
@@ -169,8 +169,8 @@ const TOOLS: ToolDef[] = [
       },
       required: ["content"],
     },
-    handler: async (db, args) => {
-      const m = await saveMemory(db, args);
+    handler: async (db, userId, args) => {
+      const m = await saveMemory(db, userId, args);
       return `保存しました → [memory#${m.id}] (${m.kind}${m.project ? `/${m.project}` : ""}) ${m.title || m.content.slice(0, 60)}`;
     },
   },
@@ -189,8 +189,8 @@ const TOOLS: ToolDef[] = [
       },
       required: ["title"],
     },
-    handler: async (db, args) => {
-      const t = await createTask(db, args);
+    handler: async (db, userId, args) => {
+      const t = await createTask(db, userId, args);
       return `タスクを作成しました → ${fmtTask(t)}`;
     },
   },
@@ -211,8 +211,8 @@ const TOOLS: ToolDef[] = [
       },
       required: ["id"],
     },
-    handler: async (db, args) => {
-      const t = await updateTask(db, args);
+    handler: async (db, userId, args) => {
+      const t = await updateTask(db, userId, args);
       return `更新しました → ${fmtTask(t)}`;
     },
   },
@@ -226,8 +226,8 @@ const TOOLS: ToolDef[] = [
         project: str("プロジェクト名で絞り込み(省略可)"),
       },
     },
-    handler: async (db, args) => {
-      const tasks = await listTasks(db, {
+    handler: async (db, userId, args) => {
+      const tasks = await listTasks(db, userId, {
         status: typeof args.status === "string" ? args.status : undefined,
         project: typeof args.project === "string" && args.project.trim() ? args.project.trim() : undefined,
       });
@@ -248,21 +248,21 @@ const TOOLS: ToolDef[] = [
       },
       required: ["type", "id"],
     },
-    handler: async (db, args) => {
+    handler: async (db, userId, args) => {
       const id = Number(args.id);
       if (!Number.isInteger(id) || id <= 0) throw new Error("id が不正です");
       if (args.type === "memory") {
-        const m = await getMemory(db, id);
+        const m = await getMemory(db, userId, id);
         if (!m) return `memory#${id} は見つかりません`;
         return `[memory#${m.id}] ${m.kind}${m.project ? ` / ${m.project}` : ""}${m.tags ? ` / tags: ${m.tags}` : ""} / ${fmtDate(m.created_at)}\n${m.title ? `# ${m.title}\n` : ""}${m.content}`;
       }
       if (args.type === "task") {
-        const t = await getTask(db, id);
+        const t = await getTask(db, userId, id);
         if (!t) return `task#${id} は見つかりません`;
         return `${fmtTask(t)}\n作成: ${fmtDate(t.created_at)} / 更新: ${fmtDate(t.updated_at)}${t.completed_at ? ` / 完了: ${fmtDate(t.completed_at)}` : ""}\n${t.description || "(詳細なし)"}`;
       }
       if (args.type === "chat") {
-        const c = await getConversationText(db, id, Number(args.offset) || 0);
+        const c = await getConversationText(db, userId, id, Number(args.offset) || 0);
         if (!c) return `chat#${id} は見つかりません`;
         const tail =
           c.nextOffset !== null
@@ -277,8 +277,8 @@ const TOOLS: ToolDef[] = [
     name: "list_projects",
     description: "プロジェクト一覧(それぞれの記憶数・未完了タスク数・チャット数)を取得する。",
     inputSchema: { type: "object", properties: {} },
-    handler: async (db) => {
-      const projects = await listProjects(db);
+    handler: async (db, userId) => {
+      const projects = await listProjects(db, userId);
       if (!projects.length) return "プロジェクトはまだありません。save_memory や create_task で project を指定すると自動作成されます。";
       return (
         "プロジェクト一覧:\n" +
@@ -307,7 +307,7 @@ function rpcError(id: string | number | null, code: number, message: string) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-async function handleRpc(msg: RpcRequest, db: D1Database): Promise<Record<string, unknown>> {
+async function handleRpc(msg: RpcRequest, db: D1Database, userId: number): Promise<Record<string, unknown>> {
   const id = msg.id as string | number | null;
   const params = msg.params ?? {};
   switch (msg.method) {
@@ -332,7 +332,7 @@ async function handleRpc(msg: RpcRequest, db: D1Database): Promise<Record<string
       if (!tool) return rpcError(id, -32602, `Unknown tool: ${name}`);
       const args = (params.arguments ?? {}) as Record<string, unknown>;
       try {
-        const text = await tool.handler(db, args);
+        const text = await tool.handler(db, userId, args);
         return rpcResult(id, { content: [{ type: "text", text }], isError: false });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -358,7 +358,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Expose-Headers": "Mcp-Session-Id",
 };
 
-export async function handleMcpRequest(req: Request, db: D1Database): Promise<Response> {
+export async function handleMcpRequest(req: Request, db: D1Database, userId: number): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== "POST") {
     // ステートレス実装のため SSE ストリーム(GET)は提供しない
@@ -381,7 +381,7 @@ export async function handleMcpRequest(req: Request, db: D1Database): Promise<Re
       continue;
     }
     if (m.id === undefined) continue; // notification (例: notifications/initialized) は応答不要
-    responses.push(await handleRpc(m, db));
+    responses.push(await handleRpc(m, db, userId));
   }
 
   if (!responses.length) return new Response(null, { status: 202, headers: CORS_HEADERS });

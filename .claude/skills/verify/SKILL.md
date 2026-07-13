@@ -8,14 +8,18 @@ description: Dscribe (Cloudflare Workers + D1) をローカルで起動して MC
 ## 起動
 
 ```bash
-cp .dev.vars.example .dev.vars                      # AUTH_TOKEN=dev-token
+cp .dev.vars.example .dev.vars                      # INVITE_CODE=dev-invite
 npm install
 npx wrangler d1 migrations apply dscribe-db --local
+npm run seed:local                                  # オーナー owner@local / dev-token を作成
 npx wrangler dev --port 8787                        # バックグラウンド推奨
 ```
 
 - wrangler.toml の database_id がプレースホルダのままでもローカルは動く(リモートのみ必要)
 - 起動確認: `curl -s http://localhost:8787/` が HTML を返せばOK
+- マルチアカウント: `POST /join/dev-invite` に `{"email":"a@example.com"}` で新規ユーザー作成。
+  返ってきたトークンで2ユーザー目として操作し、**ユーザー間でデータが見えないこと**を必ず確認する
+  (Aで save_memory → Bの search/recall_context に出ない、Bのidを get_item しても見つからない)
 
 ## MCP エンドポイントの駆動 (Claude コネクタ相当)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Dscribe ワンコマンドセットアップ (Cloudflare 無料プランでOK)
+# 再実行するとオーナーURLと招待リンクは再発行されます(メンバーのURLはそのまま)
 set -euo pipefail
 
 echo "=============================================="
@@ -36,23 +37,31 @@ echo "$DEPLOY_OUT"
 WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE 'https://[^ ]+\.workers\.dev' | head -1 || true)
 WORKER_URL=${WORKER_URL:-"https://dscribe.<あなたのサブドメイン>.workers.dev"}
 
-echo "→ 6/6 アクセス用の秘密トークンを生成・設定中..."
-TOKEN=$(node -e "console.log(require('crypto').randomBytes(24).toString('hex'))")
-echo "$TOKEN" | npx wrangler secret put AUTH_TOKEN
+echo "→ 6/6 オーナーアカウントと招待コードを設定中..."
+OWNER_TOKEN=$(node -e "console.log(require('crypto').randomBytes(24).toString('hex'))")
+INVITE=$(node -e "console.log(require('crypto').randomBytes(16).toString('hex'))")
+# オーナーアカウントを作成(既にあればトークンを再発行)
+npx wrangler d1 execute dscribe-db --remote --command "INSERT INTO users (email, token, is_owner) VALUES ('owner@local', '$OWNER_TOKEN', 1) ON CONFLICT(email) DO UPDATE SET token = excluded.token" >/dev/null
+# 招待コード(このコードを含むリンクを知っている人だけが新規登録できる)
+echo "$INVITE" | npx wrangler secret put INVITE_CODE
 
 echo ""
 echo "=============================================="
 echo " ✅ セットアップ完了!"
 echo "=============================================="
 echo ""
-echo "① Claude コネクタ用 URL"
-echo "   (claude.ai → 設定 → コネクタ → カスタムコネクタを追加 → リモートMCPサーバーURL に貼り付け)"
+echo "① あなた(オーナー)のダッシュボード ※ブックマーク必須"
 echo ""
-echo "   $WORKER_URL/mcp/$TOKEN"
+echo "   $WORKER_URL/app/$OWNER_TOKEN"
 echo ""
-echo "② Web ダッシュボード (ブックマーク推奨。過去チャットの取り込みもここから)"
+echo "② あなたの Claude コネクタ用 URL"
+echo "   (claude.ai → 設定 → コネクタ → カスタムコネクタを追加 に貼り付け)"
 echo ""
-echo "   $WORKER_URL/app/$TOKEN"
+echo "   $WORKER_URL/mcp/$OWNER_TOKEN"
 echo ""
-echo "⚠ 上記URLは秘密のトークンを含みます。他人に教えないでください。"
-echo "  トークンを変えたい場合: 新しいランダム文字列を 'npx wrangler secret put AUTH_TOKEN' で再設定"
+echo "③ 招待リンク(新規登録ページ。招待したい人にだけ渡す)"
+echo ""
+echo "   $WORKER_URL/join/$INVITE"
+echo ""
+echo "⚠ ①②はあなたのログイン情報そのものです。他人に教えないでください。"
+echo "  メンバーの管理(URL再発行・削除)はダッシュボードの ⚙️設定 タブでできます。"

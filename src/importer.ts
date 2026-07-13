@@ -36,7 +36,7 @@ function asString(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
 }
 
-export async function importConversations(db: D1Database, list: unknown): Promise<ImportStats> {
+export async function importConversations(db: D1Database, userId: number, list: unknown): Promise<ImportStats> {
   let items: any[];
   if (Array.isArray(list)) items = list;
   else if (list && typeof list === "object" && Array.isArray((list as any).conversations)) {
@@ -65,8 +65,8 @@ export async function importConversations(db: D1Database, list: unknown): Promis
           : [];
 
       const existing = await db
-        .prepare("SELECT id FROM conversations WHERE uuid = ?")
-        .bind(uuid)
+        .prepare("SELECT id FROM conversations WHERE user_id = ? AND uuid = ?")
+        .bind(userId, uuid)
         .first<{ id: number }>();
 
       let convId: number;
@@ -80,8 +80,8 @@ export async function importConversations(db: D1Database, list: unknown): Promis
         stats.updated++;
       } else {
         const res = await db
-          .prepare("INSERT INTO conversations (uuid, name, project_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-          .bind(uuid, name, projectName, createdAt, updatedAt)
+          .prepare("INSERT INTO conversations (user_id, uuid, name, project_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(userId, uuid, name, projectName, createdAt, updatedAt)
           .run();
         convId = Number(res.meta.last_row_id);
         stats.imported++;
@@ -116,7 +116,7 @@ export async function importConversations(db: D1Database, list: unknown): Promis
   return stats;
 }
 
-export async function importProjects(db: D1Database, list: unknown): Promise<ImportStats> {
+export async function importProjects(db: D1Database, userId: number, list: unknown): Promise<ImportStats> {
   let items: any[];
   if (Array.isArray(list)) items = list;
   else if (list && typeof list === "object" && Array.isArray((list as any).projects)) {
@@ -134,7 +134,7 @@ export async function importProjects(db: D1Database, list: unknown): Promise<Imp
         stats.skipped++;
         continue;
       }
-      const pid = await ensureProject(db, name);
+      const pid = await ensureProject(db, userId, name);
       const desc = asString(proj?.description) || asString(proj?.prompt_template);
       if (pid && desc) {
         await db.prepare("UPDATE projects SET description = ? WHERE id = ?").bind(desc.slice(0, 5000), pid).run();
@@ -148,12 +148,12 @@ export async function importProjects(db: D1Database, list: unknown): Promise<Imp
         if (!content || !pid) continue;
         const title = (asString(doc?.filename) || "project-doc").slice(0, 200);
         await db
-          .prepare("DELETE FROM memories WHERE project_id = ? AND kind = 'note' AND source = 'import' AND title = ?")
-          .bind(pid, title)
+          .prepare("DELETE FROM memories WHERE user_id = ? AND project_id = ? AND kind = 'note' AND source = 'import' AND title = ?")
+          .bind(userId, pid, title)
           .run();
         await db
-          .prepare("INSERT INTO memories (kind, title, content, source, project_id) VALUES ('note', ?, ?, 'import', ?)")
-          .bind(title, content.slice(0, 50000), pid)
+          .prepare("INSERT INTO memories (user_id, kind, title, content, source, project_id) VALUES (?, 'note', ?, ?, 'import', ?)")
+          .bind(userId, title, content.slice(0, 50000), pid)
           .run();
         stats.messages++;
       }

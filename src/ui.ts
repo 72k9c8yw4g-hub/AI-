@@ -59,7 +59,7 @@ a{color:var(--accent)}
 </style>
 </head>
 <body>
-<header><span style="font-size:22px">🧠</span><div><h1>Dscribe <span class="sub">– Second Brain for Claude</span></h1></div></header>
+<header><span style="font-size:22px">🧠</span><div><h1>Dscribe <span class="sub">– Second Brain for Claude</span></h1></div><div class="sub" id="acct" style="margin-left:auto"></div></header>
 <nav id="nav"></nav>
 <main id="main"><div class="empty">読み込み中…</div></main>
 <dialog id="dlg"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b id="dlgTitle"></b><button class="ghost" onclick="document.getElementById('dlg').close()">✕ 閉じる</button></div><div class="viewer" id="dlgBody"></div><div style="margin-top:8px;text-align:center"><button class="primary" id="dlgMore" style="display:none">続きを読む</button></div></dialog>
@@ -305,11 +305,11 @@ function viewSetup(){
     + "- 過去の会話・決定・「前に話したこと」に言及されたら、search で検索してから答える。\\n"
     + "- 会話中に重要な情報(決定事項、好み、進捗、新しいタスク)が出たら、その都度 save_memory / create_task で保存する。毎回許可を求めなくてよい。\\n"
     + "- タスクの完了・変更が話題に出たら update_task で反映する。";
-  main('<div class="card"><h2>🔌 Claude コネクタ設定</h2>'
+  var htmlStr = '<div class="card"><h2>🔌 Claude コネクタ設定</h2>'
     + '<p>① claude.ai → 設定 → <b>コネクタ</b> → <b>カスタムコネクタを追加</b> で以下のURLを登録:</p>'
     + '<pre class="code" id="mcpUrl">'+esc(mcpUrl)+'</pre>'
     + '<button class="primary" onclick="copyText(\\'mcpUrl\\')">URLをコピー</button>'
-    + '<p class="meta">※このURLにはアクセス用の秘密トークンが含まれています。他人に共有しないでください。</p>'
+    + '<p class="meta">※このURLにはあなた専用の秘密トークンが含まれています。他人に共有しないでください。</p>'
     + '</div>'
     + '<div class="card"><h2>📝 おすすめ: Claude に自動で使わせる設定</h2>'
     + '<p>claude.ai → 設定 → プロフィール →「Claudeへの共通指示(パーソナル設定)」に以下を貼り付けると、毎回言わなくても Claude が自動で記憶の保存・呼び出しをします:</p>'
@@ -319,7 +319,47 @@ function viewSetup(){
     + '<pre class="code" id="ccCmd">claude mcp add --transport http dscribe '+esc(mcpUrl)+'</pre>'
     + '<button class="primary" onclick="copyText(\\'ccCmd\\')">コマンドをコピー</button></div>'
     + '<div class="card"><h2>📦 データのエクスポート</h2>'
-    + '<p><a href="'+API+'/export" download="dscribe-export.json">全データをJSONでダウンロード</a>(バックアップ用)</p></div>');
+    + '<p><a href="'+API+'/export" download="dscribe-export.json">自分の全データをJSONでダウンロード</a>(バックアップ用)</p></div>';
+  if(ME && ME.is_owner){
+    htmlStr += '<div class="card"><h2>👥 メンバー管理(オーナー専用)</h2>'
+      + (ME.join_url
+        ? '<p>この<b>招待リンク</b>を知っている人だけが新規登録できます。登録した人のデータは完全に独立していて、あなたからも見えません:</p>'
+          + '<pre class="code" id="joinUrl">'+esc(ME.join_url)+'</pre>'
+          + '<button class="primary" onclick="copyText(\\'joinUrl\\')">招待リンクをコピー</button>'
+        : '<p class="err">INVITE_CODE が未設定のため、新規登録は現在無効です(setup.sh を実行して設定してください)</p>')
+      + '<div id="members" style="margin-top:14px">メンバーを読み込み中…</div></div>';
+  }
+  main(htmlStr);
+  if(ME && ME.is_owner) loadMembers();
+}
+function loadMembers(){
+  api("/users").then(function(d){
+    el("members").innerHTML = '<ul class="plain">' + d.users.map(function(u){
+      return '<li><div class="grow"><b>'+esc(u.email)+'</b>'+(u.is_owner?' <span class="chip done">オーナー</span>':'')
+        + '<div class="meta">登録: '+esc((u.created_at||"").slice(0,10))+' / 記憶'+u.memory_count+' / タスク'+u.task_count+' / チャット'+u.conversation_count+'</div>'
+        + '<div id="rst'+u.id+'"></div></div>'
+        + '<button class="ghost" title="アクセスURLを再発行" onclick="resetMember('+u.id+')">🔑</button>'
+        + (u.is_owner ? '' : '<button class="ghost" title="削除" onclick="delMember('+u.id+')">🗑</button>')
+        + '</li>';
+    }).join("") + '</ul>'
+    + '<p class="meta">🔑 = アクセスURLの再発行(URLを無くした人に新しいURLを渡す)。再発行すると古いURLは使えなくなります。</p>';
+  }).catch(function(e){ el("members").innerHTML = '<div class="err">'+esc(e.message)+'</div>'; });
+}
+function resetMember(id){
+  var self = ME && id === ME.id;
+  if(!confirm(self
+    ? "自分のアクセスURLを再発行しますか?(今のURLは使えなくなり、新しいURLに自動で移動します。コネクタのURLも登録し直しが必要です)"
+    : "このメンバーのアクセスURLを再発行しますか?(古いURLは使えなくなります)")) return;
+  api("/users/"+id+"/reset", {method:"POST"}).then(function(r){
+    if(self){ location.href = r.app_url; return; }
+    el("rst"+id).innerHTML = '<div class="meta">新しいダッシュボードURL(本人にだけ渡してください):</div>'
+      + '<pre class="code" id="rstu'+id+'">'+esc(r.app_url)+'</pre>'
+      + '<button class="primary" onclick="copyText(\\'rstu'+id+'\\')">コピー</button>';
+  }).catch(alertErr);
+}
+function delMember(id){
+  if(!confirm("このメンバーとそのデータ(記憶・タスク・チャット履歴)を完全に削除しますか?取り消せません。")) return;
+  api("/users/"+id, {method:"DELETE"}).then(loadMembers).catch(alertErr);
 }
 function copyText(id){
   navigator.clipboard.writeText(el(id).textContent).then(function(){ alert("コピーしました"); });
@@ -329,8 +369,13 @@ function showErr(e){ main('<div class="card err">エラー: '+esc(e.message)+'<b
 function alertErr(e){ alert("エラー: " + e.message); }
 
 var VIEWS = {home:viewHome, tasks:viewTasks, memories:viewMemories, chats:viewChats, search:viewSearch, import:viewImport, setup:viewSetup};
+var ME = null;
 renderNav();
-viewHome();
+api("/me").then(function(me){
+  ME = me;
+  el("acct").textContent = me.email + (me.is_owner ? " 👑" : "");
+  viewHome();
+}).catch(showErr);
 </script>
 </body>
 </html>`;
@@ -339,7 +384,77 @@ viewHome();
 export function renderLanding(): string {
   return `<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Dscribe</title>
-<style>body{font-family:sans-serif;background:#101216;color:#e8eaed;display:grid;place-items:center;height:100vh;margin:0;text-align:center}</style></head>
+<style>body{font-family:sans-serif;background:#101216;color:#e8eaed;display:grid;place-items:center;height:100vh;margin:0;text-align:center;padding:16px}</style></head>
 <body><div><div style="font-size:48px">🧠</div><h1>Dscribe – Second Brain</h1>
-<p>稼働中です。ダッシュボードへは <code>/app/&lt;トークン&gt;</code> でアクセスしてください。</p></div></body></html>`;
+<p>稼働中です。ダッシュボードへは自分専用のURL(<code>/app/&lt;トークン&gt;</code>)でアクセスしてください。</p>
+<p style="color:#9aa0a6">新規登録には招待リンクが必要です。URLを無くした場合は管理者(招待した人)に再発行を依頼してください。</p></div></body></html>`;
+}
+
+export function renderJoinPage(): string {
+  return `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+<title>Dscribe – アカウント登録</title>
+<style>
+:root{ --bg:#f5f6f8; --panel:#ffffff; --text:#1a1d21; --sub:#6b7280; --line:#e5e7eb; --accent:#6c5ce7; --accent2:#00b894; --danger:#e74c3c; --chip:#eef0f4; }
+@media (prefers-color-scheme: dark){ :root{ --bg:#101216; --panel:#181b21; --text:#e8eaed; --sub:#9aa0a6; --line:#2a2e36; --chip:#232730; } }
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;line-height:1.7;display:grid;place-items:center;min-height:100vh;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;max-width:560px;width:100%}
+h1{font-size:20px;margin:0 0 4px} .sub{color:var(--sub);font-size:13px}
+input{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:15px;margin:14px 0 10px}
+button.primary{width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;cursor:pointer}
+pre.code{background:var(--chip);border-radius:8px;padding:12px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all}
+button.copy{background:none;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;margin-bottom:10px}
+.err{color:var(--danger);margin-top:8px} .ok{color:var(--accent2)}
+.warn{background:var(--chip);border-radius:10px;padding:10px 12px;font-size:13px;margin-top:14px}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="card">
+  <div style="font-size:40px;text-align:center">🧠</div>
+  <h1>Dscribe – Second Brain に登録</h1>
+  <div class="sub">あなた専用の「第二の脳」を作成します。データは完全に独立していて、他の人(管理者を含む)からは見えません。</div>
+  <div id="form">
+    <input type="email" id="email" placeholder="メールアドレス" autocomplete="email">
+    <button class="primary" onclick="join()">登録する</button>
+    <div id="msg"></div>
+  </div>
+  <div id="done" style="display:none"></div>
+</div>
+<script>
+"use strict";
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function el(id){ return document.getElementById(id); }
+function copyText(id){ navigator.clipboard.writeText(el(id).textContent).then(function(){ alert("コピーしました"); }); }
+document.getElementById("email").addEventListener("keydown", function(e){ if(e.key === "Enter") join(); });
+function join(){
+  var email = el("email").value.trim();
+  if(!email){ el("msg").innerHTML = '<div class="err">メールアドレスを入力してください</div>'; return; }
+  el("msg").textContent = "登録中…";
+  fetch(location.pathname, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email:email}) })
+    .then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error || ("HTTP "+r.status)); return j; }); })
+    .then(function(r){
+      el("form").style.display = "none";
+      var d = el("done");
+      d.style.display = "";
+      d.innerHTML = '<p class="ok"><b>✅ 登録完了!</b>(' + esc(r.email) + ')</p>'
+        + '<p><b>① あなたのダッシュボード</b>(ブックマーク必須):</p>'
+        + '<pre class="code" id="appUrl">' + esc(r.app_url) + '</pre>'
+        + '<button class="copy" onclick="copyText(\\'appUrl\\')">コピー</button>'
+        + '<p><b>② Claude コネクタ用URL</b>(claude.ai → 設定 → コネクタ → カスタムコネクタを追加):</p>'
+        + '<pre class="code" id="mcpUrl">' + esc(r.mcp_url) + '</pre>'
+        + '<button class="copy" onclick="copyText(\\'mcpUrl\\')">コピー</button>'
+        + '<div class="warn">⚠ この2つのURLがあなたの<b>ログイン情報そのもの</b>です。必ずブックマークし、他人に教えないでください。無くした場合は管理者(招待した人)に再発行を依頼できます。</div>'
+        + '<p style="margin-top:14px"><a href="' + esc(r.app_url) + '">→ ダッシュボードを開く</a>(Claudeへの設定方法は「⚙️ 設定」タブにあります)</p>';
+    })
+    .catch(function(e){ el("msg").innerHTML = '<div class="err">' + esc(e.message) + '</div>'; });
+}
+</script>
+</body>
+</html>`;
 }

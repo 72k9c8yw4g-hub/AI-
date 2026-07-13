@@ -1,14 +1,21 @@
-// Dscribe – エントリポイント
+// Dscribe – エントリポイント (マルチアカウント)
 // ルーティング:
-//   POST /mcp/<token>   … Claude コネクタ用 MCP エンドポイント (Authorization: Bearer でも可)
-//   GET  /app/<token>   … Web ダッシュボード
-//   *    /api/<token>/… … ダッシュボード用 REST API
-//   GET  /              … ランディング(稼働確認)
+//   GET/POST /join/<招待コード> … 新規登録(リンクを知っている人のみ)
+//   POST /mcp/<個人トークン>    … Claude コネクタ用 MCP エンドポイント (Authorization: Bearer でも可)
+//   GET  /app/<個人トークン>    … Web ダッシュボード
+//   *    /api/<個人トークン>/…  … ダッシュボード用 REST API
+//   GET  /                      … ランディング(稼働確認)
+// 各ユーザーのデータは user_id で完全分離。トークンはユーザーごとに独立。
 
 import { handleMcpRequest } from "./mcp";
-import { renderApp, renderLanding } from "./ui";
+import { renderApp, renderLanding, renderJoinPage } from "./ui";
 import { importConversations, importProjects } from "./importer";
 import {
+  getUserByToken,
+  createUser,
+  listUsers,
+  resetUserToken,
+  deleteUserCascade,
   getOverview,
   listTasks,
   createTask,
@@ -24,11 +31,12 @@ import {
   getTask,
   searchAll,
   listProjects,
+  type UserRow,
 } from "./db";
 
 export interface Env {
   DB: D1Database;
-  AUTH_TOKEN: string;
+  INVITE_CODE: string;
 }
 
 async function sha256Hex(s: string): Promise<string> {
@@ -37,9 +45,9 @@ async function sha256Hex(s: string): Promise<string> {
 }
 
 // タイミング攻撃を避けるためハッシュ同士を比較する
-async function tokenOk(env: Env, given: string | null | undefined): Promise<boolean> {
-  if (!env.AUTH_TOKEN || !given) return false;
-  return (await sha256Hex(env.AUTH_TOKEN)) === (await sha256Hex(given));
+async function secretOk(secret: string | undefined, given: string | null | undefined): Promise<boolean> {
+  if (!secret || !given) return false;
+  return (await sha256Hex(secret)) === (await sha256Hex(given));
 }
 
 function bearerToken(req: Request): string | null {
@@ -51,37 +59,75 @@ function json(data: unknown, status = 200): Response {
   return Response.json(data, { status });
 }
 
-const notFound = () => json({ error: "not found" }, 404);
-const unauthorized = () => json({ error: "unauthorized: トークンが違います" }, 401);
+function html(body: string, status = 200): Response {
+  return new Response(body, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
 
-async function handleApi(req: Request, env: Env, rest: string[], url: URL): Promise<Response> {
+const notFound = () => json({ error: "not found" }, 404);
+const unauthorized = () => json({ error: "unauthorized: URLのトークンが違います" }, 401);
+
+async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], url: URL): Promise<Response> {
   const db = env.DB;
+  const uid = user.id;
   const method = req.method;
   const head = rest[0] ?? "";
   const sub = rest[1] ?? "";
 
+  // GET /me … ログイン中アカウント情報(オーナーには招待リンクも返す)
+  if (head === "me" && method === "GET") {
+    return json({
+      id: user.id,
+      email: user.email,
+      is_owner: !!user.is_owner,
+      join_url: user.is_owner && env.INVITE_CODE ? `${url.origin}/join/${env.INVITE_CODE}` : null,
+    });
+  }
+
+  // /users … オーナー専用のメンバー管理
+  if (head === "users") {
+    if (!user.is_owner) return json({ error: "オーナーのみ実行できます" }, 403);
+    if (method === "GET" && !sub) return json({ users: await listUsers(db) });
+    const id = Number(sub);
+    if (Number.isInteger(id) && id > 0) {
+      if (method === "POST" && rest[2] === "reset") {
+        const token = await resetUserToken(db, id);
+        if (!token) return notFound();
+        return json({
+          token,
+          app_url: `${url.origin}/app/${token}`,
+          mcp_url: `${url.origin}/mcp/${token}`,
+        });
+      }
+      if (method === "DELETE") {
+        if (id === user.id) return json({ error: "自分自身は削除できません" }, 400);
+        return (await deleteUserCascade(db, id)) ? json({ ok: true }) : notFound();
+      }
+    }
+    return notFound();
+  }
+
   // GET /overview
   if (head === "overview" && method === "GET") {
-    const ov = await getOverview(db);
+    const ov = await getOverview(db, uid);
     return json({ counts: ov.counts, tasks: ov.tasks, memories: ov.memories.slice(0, 8), projects: ov.projects });
   }
 
   // /tasks
   if (head === "tasks") {
     if (method === "GET" && !sub) {
-      const tasks = await listTasks(db, {
+      const tasks = await listTasks(db, uid, {
         status: url.searchParams.get("status") ?? "active",
         project: url.searchParams.get("project") ?? undefined,
       });
       return json({ tasks });
     }
-    if (method === "POST" && !sub) return json({ task: await createTask(db, await req.json()) }, 201);
+    if (method === "POST" && !sub) return json({ task: await createTask(db, uid, await req.json()) }, 201);
     const id = Number(sub);
     if (Number.isInteger(id) && id > 0) {
-      if (method === "PATCH") return json({ task: await updateTask(db, { ...(await req.json<object>()), id }) });
-      if (method === "DELETE") return (await deleteTask(db, id)) ? json({ ok: true }) : notFound();
+      if (method === "PATCH") return json({ task: await updateTask(db, uid, { ...(await req.json<object>()), id }) });
+      if (method === "DELETE") return (await deleteTask(db, uid, id)) ? json({ ok: true }) : notFound();
       if (method === "GET") {
-        const t = await getTask(db, id);
+        const t = await getTask(db, uid, id);
         return t ? json({ task: t }) : notFound();
       }
     }
@@ -91,7 +137,7 @@ async function handleApi(req: Request, env: Env, rest: string[], url: URL): Prom
   // /memories
   if (head === "memories") {
     if (method === "GET" && !sub) {
-      const memories = await listMemories(db, {
+      const memories = await listMemories(db, uid, {
         kind: url.searchParams.get("kind") ?? undefined,
         project: url.searchParams.get("project") ?? undefined,
         limit: Number(url.searchParams.get("limit")) || 50,
@@ -100,31 +146,31 @@ async function handleApi(req: Request, env: Env, rest: string[], url: URL): Prom
     }
     if (method === "POST" && !sub) {
       const body = (await req.json()) as Record<string, unknown>;
-      return json({ memory: await saveMemory(db, { ...body, source: typeof body.source === "string" ? body.source : "manual" }) }, 201);
+      return json({ memory: await saveMemory(db, uid, { ...body, source: typeof body.source === "string" ? body.source : "manual" }) }, 201);
     }
     const id = Number(sub);
     if (Number.isInteger(id) && id > 0 && method === "DELETE") {
-      return (await deleteMemory(db, id)) ? json({ ok: true }) : notFound();
+      return (await deleteMemory(db, uid, id)) ? json({ ok: true }) : notFound();
     }
     return notFound();
   }
 
   // /conversations
   if (head === "conversations") {
-    if (method === "GET" && !sub) return json({ conversations: await listConversations(db) });
+    if (method === "GET" && !sub) return json({ conversations: await listConversations(db, uid) });
     const id = Number(sub);
     if (Number.isInteger(id) && id > 0 && method === "DELETE") {
-      return (await deleteConversation(db, id)) ? json({ ok: true }) : notFound();
+      return (await deleteConversation(db, uid, id)) ? json({ ok: true }) : notFound();
     }
     return notFound();
   }
 
   // GET /projects
-  if (head === "projects" && method === "GET") return json({ projects: await listProjects(db) });
+  if (head === "projects" && method === "GET") return json({ projects: await listProjects(db, uid) });
 
   // GET /search?q=
   if (head === "search" && method === "GET") {
-    const { results } = await searchAll(db, {
+    const { results } = await searchAll(db, uid, {
       query: url.searchParams.get("q") ?? "",
       project: url.searchParams.get("project") ?? undefined,
       limit: Number(url.searchParams.get("limit")) || 10,
@@ -138,17 +184,17 @@ async function handleApi(req: Request, env: Env, rest: string[], url: URL): Prom
     const id = Number(url.searchParams.get("id"));
     if (!Number.isInteger(id) || id <= 0) return json({ error: "id が不正です" }, 400);
     if (type === "chat") {
-      const c = await getConversationText(db, id, Number(url.searchParams.get("offset")) || 0);
+      const c = await getConversationText(db, uid, id, Number(url.searchParams.get("offset")) || 0);
       if (!c) return notFound();
       return json({ text: (c.offset === 0 ? c.header + "\n\n" : "") + c.page, nextOffset: c.nextOffset, total: c.total });
     }
     if (type === "memory") {
-      const m = await getMemory(db, id);
+      const m = await getMemory(db, uid, id);
       if (!m) return notFound();
       return json({ text: `${m.title ? m.title + "\n\n" : ""}${m.content}\n\n(${m.kind}${m.project ? ` / ${m.project}` : ""}${m.tags ? ` / ${m.tags}` : ""} / ${m.created_at})`, nextOffset: null });
     }
     if (type === "task") {
-      const t = await getTask(db, id);
+      const t = await getTask(db, uid, id);
       if (!t) return notFound();
       return json({ text: `${t.title}\n状態: ${t.status} / 優先度: ${t.priority}${t.due_date ? ` / 期限: ${t.due_date}` : ""}\n\n${t.description || "(詳細なし)"}`, nextOffset: null });
     }
@@ -157,20 +203,20 @@ async function handleApi(req: Request, env: Env, rest: string[], url: URL): Prom
 
   // POST /import/conversations, /import/projects
   if (head === "import" && method === "POST") {
-    if (sub === "conversations") return json(await importConversations(db, await req.json()));
-    if (sub === "projects") return json(await importProjects(db, await req.json()));
+    if (sub === "conversations") return json(await importConversations(db, uid, await req.json()));
+    if (sub === "projects") return json(await importProjects(db, uid, await req.json()));
     return notFound();
   }
 
-  // GET /export … 全データダンプ
+  // GET /export … 自分の全データダンプ
   if (head === "export" && method === "GET") {
     const [tasks, memories, projects, conversations] = await Promise.all([
-      listTasks(db, { status: "all", limit: 300 }),
-      listMemories(db, { limit: 200 }),
-      listProjects(db),
-      listConversations(db, 500),
+      listTasks(db, uid, { status: "all", limit: 300 }),
+      listMemories(db, uid, { limit: 200 }),
+      listProjects(db, uid),
+      listConversations(db, uid, 500),
     ]);
-    return json({ exported_at: new Date().toISOString(), tasks, memories, projects, conversations });
+    return json({ exported_at: new Date().toISOString(), account: user.email, tasks, memories, projects, conversations });
   }
 
   return notFound();
@@ -181,34 +227,51 @@ export default {
     const url = new URL(req.url);
     const seg = url.pathname.split("/").filter(Boolean);
 
-    if (!env.AUTH_TOKEN) {
-      return new Response("セットアップ未完了: `npx wrangler secret put AUTH_TOKEN` でトークンを設定してください(setup.sh 参照)", {
-        status: 503,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      });
-    }
-
     if (seg.length === 0) {
-      return new Response(renderLanding(), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return html(renderLanding());
     }
 
     const [area, token, ...rest] = seg;
 
+    // 新規登録(招待リンクを知っている人のみ)
+    if (area === "join") {
+      if (!(await secretOk(env.INVITE_CODE, token))) {
+        return html(renderLanding(), 404);
+      }
+      if (req.method === "GET") return html(renderJoinPage());
+      if (req.method === "POST") {
+        try {
+          const body = (await req.json()) as { email?: unknown };
+          const user = await createUser(env.DB, body.email);
+          return json({
+            email: user.email,
+            app_url: `${url.origin}/app/${user.token}`,
+            mcp_url: `${url.origin}/mcp/${user.token}`,
+          }, 201);
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+        }
+      }
+      return new Response(null, { status: 405, headers: { Allow: "GET, POST" } });
+    }
+
     if (area === "mcp") {
-      const given = token ?? bearerToken(req);
-      if (!(await tokenOk(env, given))) return unauthorized();
-      return handleMcpRequest(req, env.DB);
+      const user = await getUserByToken(env.DB, token ?? bearerToken(req));
+      if (!user) return unauthorized();
+      return handleMcpRequest(req, env.DB, user.id);
     }
 
     if (area === "app") {
-      if (!(await tokenOk(env, token))) return unauthorized();
-      return new Response(renderApp(), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      const user = await getUserByToken(env.DB, token);
+      if (!user) return unauthorized();
+      return html(renderApp());
     }
 
     if (area === "api") {
-      if (!(await tokenOk(env, token))) return unauthorized();
+      const user = await getUserByToken(env.DB, token);
+      if (!user) return unauthorized();
       try {
-        return await handleApi(req, env, rest, url);
+        return await handleApi(req, env, user, rest, url);
       } catch (e) {
         return json({ error: e instanceof Error ? e.message : String(e) }, 400);
       }
