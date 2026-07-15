@@ -31,6 +31,7 @@ import {
   deleteMemory,
   getMemoryChain,
   formatMemoryChain,
+  updateProjectDescription,
   listConversations,
   deleteConversation,
   getConversationText,
@@ -121,10 +122,24 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
     return notFound();
   }
 
-  // GET /overview
+  // GET /overview?project=&focus=
   if (head === "overview" && method === "GET") {
-    const ov = await getOverview(db, uid);
-    return json({ counts: ov.counts, tasks: ov.tasks, memories: ov.memories.slice(0, 8), projects: ov.projects });
+    const ov = await getOverview(db, uid, {
+      project: url.searchParams.get("project") ?? undefined,
+      focus: url.searchParams.get("focus") ?? undefined,
+    });
+    return json({
+      counts: ov.counts,
+      tasks: ov.tasks,
+      memories: ov.memories.slice(0, 8),
+      projects: ov.projects,
+      recentConvs: ov.recentConvs,
+      projectFilter: ov.projectFilter,
+      projectId: ov.projectId,
+      brief: ov.brief,
+      decisions: ov.decisions,
+      focusHits: ov.focusHits,
+    });
   }
 
   // /tasks
@@ -156,6 +171,7 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
         kind: url.searchParams.get("kind") ?? undefined,
         project: url.searchParams.get("project") ?? undefined,
         limit: Number(url.searchParams.get("limit")) || 50,
+        activeOnly: url.searchParams.get("active") === "1",
       });
       return json({ memories });
     }
@@ -180,8 +196,16 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
     return notFound();
   }
 
-  // GET /projects
-  if (head === "projects" && method === "GET") return json({ projects: await listProjects(db, uid) });
+  // /projects
+  if (head === "projects") {
+    if (method === "GET" && !sub) return json({ projects: await listProjects(db, uid) });
+    const id = Number(sub);
+    if (Number.isInteger(id) && id > 0 && method === "PATCH") {
+      const body = (await req.json()) as { description?: unknown };
+      return (await updateProjectDescription(db, uid, id, body.description)) ? json({ ok: true }) : notFound();
+    }
+    return notFound();
+  }
 
   // GET /search?q=
   if (head === "search" && method === "GET") {
