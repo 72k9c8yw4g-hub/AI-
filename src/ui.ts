@@ -101,9 +101,40 @@ function viewHome(){
       + '<div class="stat"><b>'+c.messages+'</b><span>メッセージ</span></div>'
       + '</div>';
     html += '<div class="card"><h2>✅ 未完了タスク</h2>' + (d.tasks.length ? '<ul class="plain">' + d.tasks.map(taskLi).join("") + '</ul>' : '<div class="empty">未完了タスクはありません</div>') + '</div>';
+    html += '<div class="card"><h2>📁 プロジェクト</h2>' + (d.projects.length ? '<ul class="plain">' + d.projects.map(projLi).join("") + '</ul>' : '<div class="empty">まだありません。記憶やタスクにプロジェクト名を付けると自動で作られます</div>') + '</div>';
     html += '<div class="card"><h2>💭 最近の記憶</h2>' + (d.memories.length ? '<ul class="plain">' + d.memories.map(memLi).join("") + '</ul>' : '<div class="empty">まだ記憶がありません。Claudeとの会話で自動保存されるほか、このページからも追加できます</div>') + '</div>';
     main(html);
   }).catch(showErr);
+}
+
+// ---------- プロジェクト知識ベース ----------
+function projLi(p){
+  return '<li><div class="grow"><a href="javascript:void(0)" onclick="viewProject(decodeURIComponent(\\''+encodeURIComponent(p.name)+'\\'))"><b>'+esc(p.name)+'</b></a>'
+    + (p.description?'<div class="snippet">'+esc(p.description.slice(0,100))+'</div>':"")
+    + '<div class="meta">記憶'+p.memory_count+' / 未完了タスク'+p.open_tasks+' / チャット'+p.conversation_count+'</div></div></li>';
+}
+function viewProject(name){
+  api("/overview?project=" + encodeURIComponent(name)).then(function(d){
+    var html = '<div style="margin:10px 0"><button class="ghost" onclick="go(\\'home\\')">← ホーム</button></div>';
+    html += '<div class="card"><h2>📁 '+esc(name)+'</h2>'
+      + '<textarea id="pBrief" placeholder="プロジェクトの概要・目的・ルールなど(ここに書くと Claude が recall_context で読み込みます)">'+esc(d.brief||"")+'</textarea>'
+      + (d.projectId ? '<div class="row"><button class="primary" onclick="saveBrief('+d.projectId+',\\''+encodeURIComponent(name)+'\\')">概要を保存</button></div>' : '')
+      + '</div>';
+    html += '<div class="card"><h2>📌 現行の決定事項</h2>' + (d.decisions&&d.decisions.length ? '<ul class="plain">'+d.decisions.map(memLi).join("")+'</ul>' : '<div class="empty">まだありません(決定が変わった場合、旧版は自動で履歴になります)</div>') + '</div>';
+    html += '<div class="card"><h2>✅ 未完了タスク</h2>' + (d.tasks.length ? '<ul class="plain">'+d.tasks.map(taskLi).join("")+'</ul>' : '<div class="empty">未完了タスクはありません</div>') + '</div>';
+    html += '<div class="card"><h2>💭 最近の記憶</h2>' + (d.memories.length ? '<ul class="plain">'+d.memories.map(memLi).join("")+'</ul>' : '<div class="empty">まだありません</div>') + '</div>';
+    html += '<div class="card"><h2>💬 このプロジェクトのチャット</h2>' + (d.recentConvs&&d.recentConvs.length
+      ? '<ul class="plain">'+d.recentConvs.map(function(c){
+          return '<li><div class="grow"><a href="javascript:void(0)" onclick="openItem(\\'chat\\','+c.id+')">'+esc(c.name||"(無題)")+'</a>'
+            + '<div class="meta">'+c.message_count+'メッセージ / '+esc((c.updated_at||"").slice(0,16))+'</div></div></li>';
+        }).join("")+'</ul>'
+      : '<div class="empty">まだありません(取り込み時にプロジェクト名が一致すると紐づきます)</div>') + '</div>';
+    main(html);
+  }).catch(showErr);
+}
+function saveBrief(id, encName){
+  api("/projects/"+id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({description: el("pBrief").value})})
+    .then(function(){ alert("保存しました"); viewProject(decodeURIComponent(encName)); }).catch(alertErr);
 }
 
 // ---------- タスク ----------

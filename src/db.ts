@@ -702,9 +702,20 @@ export async function searchAll(
   return { terms, results };
 }
 
-// ---------- 状況サマリー (recall_context 用) ----------
+// ---------- 状況サマリー (recall_context / プロジェクト知識ベース用) ----------
 
-export async function getOverview(db: D1Database, userId: number, project?: string) {
+export async function updateProjectDescription(db: D1Database, userId: number, id: number, description: unknown): Promise<boolean> {
+  const desc = typeof description === "string" ? description.trim().slice(0, 2000) : "";
+  const res = await db
+    .prepare("UPDATE projects SET description = ? WHERE id = ? AND user_id = ?")
+    .bind(desc, id, userId)
+    .run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+export async function getOverview(db: D1Database, userId: number, opts: { project?: string; focus?: string } = {}) {
+  const project = opts.project?.trim() || undefined;
+  const focus = opts.focus?.trim() || undefined;
   const counts = await db
     .prepare(
       `SELECT
@@ -722,6 +733,29 @@ export async function getOverview(db: D1Database, userId: number, project?: stri
   const memories = await listMemories(db, userId, { project, limit: 12, activeOnly: true });
   const projects = await listProjects(db, userId);
 
+  // プロジェクト指定時は知識ベース: 概要(brief) と現行の決定事項を先頭に出す
+  let brief: string | null = null;
+  let projectId: number | null = null;
+  let decisions: MemoryRow[] = [];
+  if (project) {
+    const p = projects.find((x) => x.name === project);
+    if (p) {
+      brief = p.description || null;
+      projectId = p.id;
+    }
+    decisions = await listMemories(db, userId, { project, kind: "decision", activeOnly: true, limit: 10 });
+  }
+
+  // focus 指定時は話題キーワードで横断検索した結果をマージ(自動コンテキスト検出)
+  let focusHits: SearchResults | null = null;
+  if (focus) {
+    try {
+      focusHits = (await searchAll(db, userId, { query: focus, limit: 5, project })).results;
+    } catch {
+      focusHits = null; // キーワードが空になった場合など。overview 自体は返す
+    }
+  }
+
   const convConds = ["c.user_id = ?"];
   const convBinds: unknown[] = [userId];
   if (project) {
@@ -738,5 +772,17 @@ export async function getOverview(db: D1Database, userId: number, project?: stri
     .bind(...convBinds)
     .all<{ id: number; name: string; project_name: string; updated_at: string | null; message_count: number }>();
 
-  return { counts: counts!, tasks, memories, projects, recentConvs, projectFilter: project ?? null };
+  return {
+    counts: counts!,
+    tasks,
+    memories,
+    projects,
+    recentConvs,
+    projectFilter: project ?? null,
+    projectId,
+    brief,
+    decisions,
+    focusQuery: focus ?? null,
+    focusHits,
+  };
 }

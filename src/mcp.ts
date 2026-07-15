@@ -29,6 +29,7 @@ const SERVER_INFO = {
 const INSTRUCTIONS = `Dscribe はユーザーの「第二の脳」。全チャット共通の長期記憶・タスク・過去チャット履歴を保管している。
 使い方の原則:
 1. 新しい会話では、本題に入る前に recall_context を1回呼び、進行中のタスクと直近の記憶を把握する。
+   最初のメッセージから話題が分かるときは focus=キーワード(や project=プロジェクト名)を付けて呼ぶと、関連する記憶・過去チャットまで一度に取得できる。
 2. ユーザーが「前に話した」「この前の」「あの件」など過去の文脈に触れたら、推測せず search で検索する。
 3. 【自動保存】会話中に次のシグナルが出たら、許可を求めずその場で保存する(会話の終わりまで溜めない):
    - 決定:「〜に決めた」「〜にする」「〜で行こう」「〜は無しで」→ save_memory(kind=decision, title に結論を一文で)
@@ -73,18 +74,37 @@ const TOOLS: ToolDef[] = [
   {
     name: "recall_context",
     description:
-      "【会話の最初に必ず1回呼ぶ】ユーザーの現在の状況(未完了タスク・最近保存された記憶・プロジェクト一覧・最近のチャット)をまとめて取得する。新しい会話で過去の文脈を引き継ぐための入口。project を指定するとそのプロジェクトに絞る。最近の記憶は現行版のみ(置き換え済みの旧版は除外)。",
+      "【会話の最初に必ず1回呼ぶ】ユーザーの現在の状況(未完了タスク・最近保存された記憶・プロジェクト一覧・最近のチャット)をまとめて取得する。新しい会話で過去の文脈を引き継ぐための入口。project を指定するとそのプロジェクトの知識ベース(概要+現行の決定事項つき)になる。focus に話題キーワードを渡すと、関連する記憶・タスク・過去チャットもまとめて返す(会話の最初のメッセージから話題が分かるときは指定推奨)。最近の記憶は現行版のみ(置き換え済みの旧版は除外)。",
     inputSchema: {
       type: "object",
-      properties: { project: str("プロジェクト名で絞り込み(省略可)") },
+      properties: {
+        project: str("プロジェクト名で絞り込み(省略可)"),
+        focus: str("会話の話題キーワード(スペース区切り・省略可)。関連する記憶・タスク・チャットを横断検索してまとめて返す"),
+      },
     },
     handler: async (db, userId, args) => {
-      const ov = await getOverview(db, userId, typeof args.project === "string" && args.project.trim() ? args.project.trim() : undefined);
+      const ov = await getOverview(db, userId, {
+        project: typeof args.project === "string" ? args.project : undefined,
+        focus: typeof args.focus === "string" ? args.focus : undefined,
+      });
       const lines: string[] = [];
       lines.push(`# 🧠 Dscribe – 現在の状況${ov.projectFilter ? `(プロジェクト: ${ov.projectFilter})` : ""}`);
       lines.push(
         `保存済み: 記憶${ov.counts.memories}件 / タスク${ov.counts.all_tasks}件(未完了${ov.counts.open_tasks}) / 取込チャット${ov.counts.conversations}件`
       );
+      if (ov.projectFilter && ov.brief) {
+        lines.push("");
+        lines.push(`【プロジェクト概要】${ov.brief}`);
+      }
+      if (ov.projectFilter && ov.decisions.length) {
+        lines.push("");
+        lines.push(`## 📌 現行の決定事項 (${ov.decisions.length})`);
+        lines.push(
+          ov.decisions
+            .map((d) => `- [memory#${d.id}] ${fmtDate(d.created_at).slice(0, 10)}: ${d.title || d.content.replace(/\s+/g, " ").slice(0, 80)}`)
+            .join("\n")
+        );
+      }
       lines.push("");
       lines.push(`## 未完了タスク (${ov.tasks.length})`);
       lines.push(ov.tasks.length ? ov.tasks.map(fmtTask).join("\n") : "(なし)");
@@ -102,6 +122,19 @@ const TOOLS: ToolDef[] = [
               .join("\n")
           : "(まだ記憶がありません。重要な情報が出たら save_memory で保存してください)"
       );
+      if (ov.focusQuery) {
+        const fh = ov.focusHits;
+        const total = fh ? fh.memories.length + fh.tasks.length + fh.chats.length : 0;
+        lines.push("");
+        lines.push(`## 🎯 話題に関連 (focus: ${ov.focusQuery})`);
+        if (!total) {
+          lines.push("(関連する保存情報は見つかりませんでした)");
+        } else if (fh) {
+          for (const h of fh.memories) lines.push(`- [memory#${h.id}] ${h.title}(${h.extra})\n  ${h.snippet}`);
+          for (const h of fh.tasks) lines.push(`- [task#${h.id}] ${h.title}(${h.extra})`);
+          for (const h of fh.chats) lines.push(`- [chat#${h.id}] ${h.title}(${h.extra})\n  ${h.snippet}`);
+        }
+      }
       if (ov.projects.length) {
         lines.push("");
         lines.push("## プロジェクト");
