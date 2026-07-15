@@ -29,6 +29,8 @@ import {
   listMemories,
   saveMemory,
   deleteMemory,
+  getMemoryChain,
+  formatMemoryChain,
   listConversations,
   deleteConversation,
   getConversationText,
@@ -204,7 +206,12 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
     if (type === "memory") {
       const m = await getMemory(db, uid, id);
       if (!m) return notFound();
-      return json({ text: `${m.title ? m.title + "\n\n" : ""}${m.content}\n\n(${m.kind}${m.project ? ` / ${m.project}` : ""}${m.tags ? ` / ${m.tags}` : ""} / ${m.created_at})`, nextOffset: null });
+      const warn = m.superseded_by_id ? `⚠ 旧版（現行: memory#${m.superseded_by_id}）\n\n` : "";
+      const chain = formatMemoryChain(await getMemoryChain(db, uid, id), id);
+      return json({
+        text: `${warn}${m.title ? m.title + "\n\n" : ""}${m.content}\n\n(${m.kind}${m.project ? ` / ${m.project}` : ""}${m.tags ? ` / ${m.tags}` : ""} / ${m.created_at})${chain ? `\n\n${chain}` : ""}`,
+        nextOffset: null,
+      });
     }
     if (type === "task") {
       const t = await getTask(db, uid, id);

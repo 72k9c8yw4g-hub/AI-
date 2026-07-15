@@ -33,7 +33,10 @@ const STATEMENTS: string[] = [
     source     TEXT NOT NULL DEFAULT 'chat',
     project_id INTEGER REFERENCES projects(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    supersedes_id    INTEGER,
+    superseded_by_id INTEGER,
+    supersede_reason TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id)`,
@@ -77,19 +80,43 @@ const STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id)`,
 ];
 
+// memories テーブルへの追加カラム。既存DB(稼働中の本番)にはここから ALTER TABLE で追加する。
+// SQLite の ALTER TABLE ADD COLUMN 制約により、NULL 許容・定数デフォルトのみ使えることに注意。
+const MEMORY_COLUMNS: Record<string, string> = {
+  supersedes_id: "ALTER TABLE memories ADD COLUMN supersedes_id INTEGER",
+  superseded_by_id: "ALTER TABLE memories ADD COLUMN superseded_by_id INTEGER",
+  supersede_reason: "ALTER TABLE memories ADD COLUMN supersede_reason TEXT",
+};
+
 let schemaReady = false;
 
 export async function ensureSchema(db: D1Database): Promise<void> {
   if (schemaReady) return;
+  let fresh = false;
   try {
     await db.prepare("SELECT id FROM users LIMIT 1").first();
-    schemaReady = true;
-    return;
   } catch {
-    // テーブル未作成 → 初期化
+    fresh = true; // テーブル未作成 → 初期化
   }
-  for (const sql of STATEMENTS) {
-    await db.prepare(sql).run();
+  if (fresh) {
+    for (const sql of STATEMENTS) {
+      await db.prepare(sql).run();
+    }
+  } else {
+    await migrateMemoryColumns(db);
   }
   schemaReady = true;
+}
+
+async function migrateMemoryColumns(db: D1Database): Promise<void> {
+  const { results } = await db.prepare("PRAGMA table_info(memories)").all<{ name: string }>();
+  const existing = new Set(results.map((r) => r.name));
+  for (const [col, ddl] of Object.entries(MEMORY_COLUMNS)) {
+    if (existing.has(col)) continue;
+    try {
+      await db.prepare(ddl).run();
+    } catch {
+      // 複数アイソレートの同時コールドスタートで ALTER が競合した場合のみ到達。片方が成功していれば良い
+    }
+  }
 }

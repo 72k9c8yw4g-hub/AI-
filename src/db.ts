@@ -23,6 +23,9 @@ export interface MemoryRow {
   source: string;
   project: string | null;
   created_at: string;
+  supersedes_id: number | null;
+  superseded_by_id: number | null;
+  supersede_reason: string | null;
 }
 
 export interface TaskRow {
@@ -229,27 +232,70 @@ export async function listProjects(db: D1Database, userId: number) {
 export async function saveMemory(
   db: D1Database,
   userId: number,
-  args: { content?: unknown; title?: unknown; kind?: unknown; tags?: unknown; project?: unknown; source?: string }
+  args: {
+    content?: unknown;
+    title?: unknown;
+    kind?: unknown;
+    tags?: unknown;
+    project?: unknown;
+    source?: string;
+    supersedes?: unknown;
+    reason?: unknown;
+  }
 ): Promise<MemoryRow> {
   const content = typeof args.content === "string" ? args.content.trim() : "";
   if (!content) throw new Error("content は必須です");
-  const projectId = await ensureProject(db, userId, args.project);
+
+  // 置き換え(決定の変更)の検証。チェーンは線形のみ: 置き換え済みの記憶は再指定不可
+  let old: MemoryRow | null = null;
+  if (args.supersedes !== undefined && args.supersedes !== null && args.supersedes !== "") {
+    const sid = Number(args.supersedes);
+    if (!Number.isInteger(sid) || sid <= 0) throw new Error("supersedes には置き換える記憶のID(数値)を指定してください");
+    old = await getMemory(db, userId, sid);
+    if (!old) throw new Error(`memory#${sid} は見つかりません`);
+    if (old.superseded_by_id)
+      throw new Error(
+        `memory#${sid} は既に memory#${old.superseded_by_id} に置き換え済みです。supersedes には最新版 memory#${old.superseded_by_id} を指定してください`
+      );
+  }
+  const reason = old && typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
+
+  // kind / project 未指定なら旧記憶から引き継ぐ(decision のチェーンが memory に化けるのを防ぐ)
+  const kind = normKind(args.kind ?? old?.kind);
+  const projectId = await ensureProject(db, userId, args.project ?? old?.project ?? undefined);
   const title = typeof args.title === "string" ? args.title.trim().slice(0, 200) : "";
   const res = await db
     .prepare(
-      `INSERT INTO memories (user_id, kind, title, content, tags, source, project_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO memories (user_id, kind, title, content, tags, source, project_id, supersedes_id, supersede_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(userId, normKind(args.kind), title, content.slice(0, 50000), normTags(args.tags), args.source ?? "chat", projectId)
+    .bind(
+      userId,
+      kind,
+      title,
+      content.slice(0, 50000),
+      normTags(args.tags),
+      args.source ?? "chat",
+      projectId,
+      old ? old.id : null,
+      reason || null
+    )
     .run();
   const id = Number(res.meta.last_row_id);
+  if (old) {
+    await db
+      .prepare("UPDATE memories SET superseded_by_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
+      .bind(id, old.id, userId)
+      .run();
+  }
   return (await getMemory(db, userId, id))!;
 }
 
 export async function getMemory(db: D1Database, userId: number, id: number): Promise<MemoryRow | null> {
   return await db
     .prepare(
-      `SELECT m.id, m.kind, m.title, m.content, m.tags, m.source, p.name AS project, m.created_at
+      `SELECT m.id, m.kind, m.title, m.content, m.tags, m.source, p.name AS project, m.created_at,
+              m.supersedes_id, m.superseded_by_id, m.supersede_reason
        FROM memories m LEFT JOIN projects p ON p.id = m.project_id
        WHERE m.id = ? AND m.user_id = ?`
     )
@@ -260,7 +306,7 @@ export async function getMemory(db: D1Database, userId: number, id: number): Pro
 export async function listMemories(
   db: D1Database,
   userId: number,
-  opts: { kind?: string; project?: string; limit?: number } = {}
+  opts: { kind?: string; project?: string; limit?: number; activeOnly?: boolean } = {}
 ): Promise<MemoryRow[]> {
   const conds: string[] = ["m.user_id = ?"];
   const binds: unknown[] = [userId];
@@ -272,10 +318,12 @@ export async function listMemories(
     conds.push("p.name = ?");
     binds.push(opts.project);
   }
+  if (opts.activeOnly) conds.push("m.superseded_by_id IS NULL");
   const limit = Math.min(Math.max(Number(opts.limit) || 50, 1), 200);
   const { results } = await db
     .prepare(
-      `SELECT m.id, m.kind, m.title, m.content, m.tags, m.source, p.name AS project, m.created_at
+      `SELECT m.id, m.kind, m.title, m.content, m.tags, m.source, p.name AS project, m.created_at,
+              m.supersedes_id, m.superseded_by_id, m.supersede_reason
        FROM memories m LEFT JOIN projects p ON p.id = m.project_id
        WHERE ${conds.join(" AND ")} ORDER BY m.id DESC LIMIT ${limit}`
     )
@@ -286,7 +334,56 @@ export async function listMemories(
 
 export async function deleteMemory(db: D1Database, userId: number, id: number): Promise<boolean> {
   const res = await db.prepare("DELETE FROM memories WHERE id = ? AND user_id = ?").bind(id, userId).run();
-  return (res.meta.changes ?? 0) > 0;
+  if ((res.meta.changes ?? 0) > 0) {
+    // 削除された記憶へのダングリング参照を掃除(置き換え先が消えたら旧版が現行に復帰する)
+    await db.prepare("UPDATE memories SET superseded_by_id = NULL WHERE user_id = ? AND superseded_by_id = ?").bind(userId, id).run();
+    await db.prepare("UPDATE memories SET supersedes_id = NULL WHERE user_id = ? AND supersedes_id = ?").bind(userId, id).run();
+    return true;
+  }
+  return false;
+}
+
+// 記憶の置き換えチェーンを古い順に返す(現行が末尾)。単独記憶なら [自分] のみ
+export async function getMemoryChain(db: D1Database, userId: number, id: number): Promise<MemoryRow[]> {
+  const cur = await getMemory(db, userId, id);
+  if (!cur) return [];
+  const seen = new Set<number>([cur.id]);
+  const back: MemoryRow[] = [];
+  let p: MemoryRow = cur;
+  while (p.supersedes_id && !seen.has(p.supersedes_id) && back.length < 20) {
+    const prev = await getMemory(db, userId, p.supersedes_id);
+    if (!prev) break;
+    seen.add(prev.id);
+    back.push(prev);
+    p = prev;
+  }
+  const fwd: MemoryRow[] = [];
+  let n: MemoryRow = cur;
+  while (n.superseded_by_id && !seen.has(n.superseded_by_id) && fwd.length < 20) {
+    const next = await getMemory(db, userId, n.superseded_by_id);
+    if (!next) break;
+    seen.add(next.id);
+    fwd.push(next);
+    n = next;
+  }
+  return [...back.reverse(), cur, ...fwd];
+}
+
+// チェーンの表示テキスト(MCP get_item と REST /item で共用)。チェーンが無ければ空文字
+export function formatMemoryChain(chain: MemoryRow[], currentId: number): string {
+  if (chain.length < 2) return "";
+  const lines = chain.map((m) => {
+    const label = m.title || m.content.replace(/\s+/g, " ").slice(0, 60);
+    const bits = [
+      m.supersede_reason ? `変更理由: ${m.supersede_reason}` : "",
+      m.superseded_by_id ? "" : "★現行",
+      m.id === currentId ? "表示中" : "",
+    ]
+      .filter(Boolean)
+      .join(" / ");
+    return `- [memory#${m.id}] ${(m.created_at ?? "").slice(0, 10)}: ${label}${bits ? `（${bits}）` : ""}`;
+  });
+  return `## 変更履歴（古い順）\n${lines.join("\n")}`;
 }
 
 // ---------- タスク ----------
@@ -509,19 +606,19 @@ export async function searchAll(
     }
     const { results: rows } = await db
       .prepare(
-        `SELECT m.id, m.kind, m.title, m.content, m.tags, p.name AS project, m.created_at
+        `SELECT m.id, m.kind, m.title, m.content, m.tags, p.name AS project, m.created_at, m.superseded_by_id
          FROM memories m LEFT JOIN projects p ON p.id = m.project_id
          WHERE m.user_id = ? AND ${termCond}${projCond} ORDER BY m.id DESC LIMIT ${limit}`
       )
       .bind(...binds)
-      .all<{ id: number; kind: string; title: string; content: string; tags: string; project: string | null; created_at: string }>();
+      .all<{ id: number; kind: string; title: string; content: string; tags: string; project: string | null; created_at: string; superseded_by_id: number | null }>();
     results.memories = rows.map((r) => ({
       type: "memory",
       id: r.id,
       title: r.title || r.content.slice(0, 40),
       snippet: makeSnippet(r.content, terms),
       date: r.created_at,
-      extra: [r.kind, r.project, r.tags].filter(Boolean).join(" / "),
+      extra: [r.superseded_by_id ? `旧版→#${r.superseded_by_id}` : "", r.kind, r.project, r.tags].filter(Boolean).join(" / "),
     }));
   }
 
@@ -621,7 +718,8 @@ export async function getOverview(db: D1Database, userId: number, project?: stri
     .first<{ memories: number; open_tasks: number; all_tasks: number; conversations: number; messages: number }>();
 
   const tasks = await listTasks(db, userId, { status: "active", project, limit: 15 });
-  const memories = await listMemories(db, userId, { project, limit: 12 });
+  // 置き換え済みの旧版は recall_context / ホーム画面には出さない(履歴は get_item / 記憶タブで見る)
+  const memories = await listMemories(db, userId, { project, limit: 12, activeOnly: true });
   const projects = await listProjects(db, userId);
 
   const convConds = ["c.user_id = ?"];

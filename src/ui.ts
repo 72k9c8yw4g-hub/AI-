@@ -56,6 +56,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 .ok{color:var(--accent2)} .err{color:var(--danger)}
 a{color:var(--accent)}
 .empty{color:var(--sub);text-align:center;padding:16px}
+.oldmem{opacity:.55}
 </style>
 </head>
 <body>
@@ -151,8 +152,12 @@ function delTask(id){
 // ---------- 記憶 ----------
 function memLi(m){
   var kindLabel = {memory:"記憶",decision:"決定",note:"ノート"}[m.kind] || m.kind;
-  return '<li><div class="grow">'
-    + '<div><span class="chip">'+esc(kindLabel)+'</span> '+(m.project?'<span class="chip">'+esc(m.project)+'</span> ':"")
+  var badges = '<span class="chip">'+esc(kindLabel)+'</span> ';
+  if(m.source==="chat") badges += '<span class="chip" title="Claudeが会話から自動保存">🤖 自動</span> ';
+  if(m.superseded_by_id) badges += '<span class="chip">旧版 → #'+m.superseded_by_id+'</span> ';
+  else if(m.supersedes_id) badges += '<span class="chip done">更新版</span> ';
+  return '<li'+(m.superseded_by_id?' class="oldmem"':'')+'><div class="grow">'
+    + '<div>'+badges+(m.project?'<span class="chip">'+esc(m.project)+'</span> ':"")
     + (m.title?'<b>'+esc(m.title)+'</b> — ':"") + esc(m.content.slice(0,200)) + '</div>'
     + '<div class="meta">'+esc((m.created_at||"").slice(0,16))+(m.tags?' / '+esc(m.tags):"")+' <a href="javascript:void(0)" onclick="openItem(\\'memory\\','+m.id+')">全文</a></div>'
     + '</div><button class="ghost" onclick="delMem('+m.id+')">🗑</button></li>';
@@ -301,10 +306,18 @@ function importConversations(file){
 function viewSetup(){
   var mcpUrl = location.origin + "/mcp/" + TOKEN;
   var snippet = "【Dscribe(第二の脳)コネクタの使い方】\\n"
-    + "- 新しい会話を始めたら、本題に入る前に recall_context を1回実行して、進行中のタスクと直近の記憶を確認する。\\n"
-    + "- 過去の会話・決定・「前に話したこと」に言及されたら、search で検索してから答える。\\n"
-    + "- 会話中に重要な情報(決定事項、好み、進捗、新しいタスク)が出たら、その都度 save_memory / create_task で保存する。毎回許可を求めなくてよい。\\n"
-    + "- タスクの完了・変更が話題に出たら update_task で反映する。";
+    + "- 新しい会話では本題の前に recall_context を1回実行し、進行中のタスクと直近の記憶を確認する。\\n"
+    + "- 「前に話した」「この前決めた」「あの件」が出たら、推測せず search で検索してから答える。\\n"
+    + "- 次のシグナルが出たら、毎回許可を求めずその場で保存する:\\n"
+    + "  ・決定(「〜に決めた」「〜で行こう」) → save_memory を kind=decision で\\n"
+    + "  ・好み・属性(「〜が好き」「普段は〜」) → save_memory を kind=memory で\\n"
+    + "  ・進捗(「〜が終わった」「〜まで進んだ」) → save_memory を kind=memory で\\n"
+    + "  ・約束・TODO(「〜までにやる」「今度〜する」) → create_task(期日があれば due_date)\\n"
+    + "- 決定を変更する話(「やっぱりBにする」「〜は中止」)が出たら: search で旧決定のIDを探し、\\n"
+    + "  save_memory を kind=decision, supersedes=旧ID, reason=変更理由 で保存する(旧決定は自動で履歴になる)。\\n"
+    + "- タスク完了の話が出たら update_task で status=done にする。\\n"
+    + "- 会話が終わりそうなときは要点を save_memory で保存する(次の会話への引き継ぎ)。\\n"
+    + "- 保存したら「📝 記憶しました」と一言だけ添える。";
   var htmlStr = '<div class="card"><h2>🔌 Claude コネクタ設定</h2>'
     + '<p>① claude.ai → 設定 → <b>コネクタ</b> → <b>カスタムコネクタを追加</b> で以下のURLを登録:</p>'
     + '<pre class="code" id="mcpUrl">'+esc(mcpUrl)+'</pre>'
