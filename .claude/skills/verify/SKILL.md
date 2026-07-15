@@ -38,6 +38,28 @@ curl -s -X POST http://localhost:8787/mcp/dev-token -H 'Content-Type: applicatio
 異常系の期待値: 不正トークン→401 / GET→405 / 壊れたJSON→-32700 /
 未知ツール→-32602 / 未知メソッド→-32601 / notification(idなし)→HTTP 202
 
+## 決定の変更履歴 (supersedes) の駆動
+
+```bash
+# 決定を保存 → 置き換え(変更理由つき)
+... tools/call save_memory {"content":"商品はタコ型に決定","kind":"decision"}          # → memory#1
+... tools/call save_memory {"content":"イカ型に変更","kind":"decision","supersedes":1,"reason":"金型コスト"}
+```
+期待値: 応答に「memory#1 を旧版としてアーカイブ / 変更理由: …」/
+get_item(memory,1) に「⚠ これは旧版です」+「## 変更履歴」/ recall_context から旧版が消える /
+search で旧版に「旧版→#2」マーク / supersedes に存在しないID→「見つかりません」/
+置き換え済みIDを再指定→「最新版 memory#N を指定してください」/
+他ユーザーの記憶IDを supersedes→「見つかりません」(ユーザー分離) /
+現行版を DELETE /api/<token>/memories/<id> すると旧版が現行に復帰(⚠が消える)
+
+## スキーママイグレーションの検証 (既存DB互換)
+
+スキーマ変更を入れたら、**旧コードで作ったDBが新コードで壊れないこと**を確認する:
+1. `git stash` で新実装を退避 → `rm -rf .wrangler` → dev 起動 → /setup → 記憶を保存
+2. dev 停止 → `git stash pop` → **dev 再起動**(schemaReady はアイソレート単位のフラグのため必須)
+3. `npx wrangler d1 execute dscribe-db --local --command "PRAGMA table_info(memories)"` で新カラム確認
+4. 旧データが recall_context / get_item で無傷で読めること(新カラムは NULL = 現行扱い)
+
 ## 取り込みの駆動
 
 claude.ai エクスポート形式のサンプル配列を `/api/dev-token/import/conversations` に POST。
