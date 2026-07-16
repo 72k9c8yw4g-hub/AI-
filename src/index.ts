@@ -11,6 +11,9 @@ import { handleMcpRequest } from "./mcp";
 import { renderApp, renderLanding, renderJoinPage, renderSetupPage } from "./ui";
 import { importConversations, importProjects } from "./importer";
 import { ensureSchema } from "./schema";
+import { ensureOsSchema } from "./os/schema";
+import { handleOsApi } from "./os/api";
+import { renderOsApp } from "./os/ui";
 import {
   getUserByToken,
   createUser,
@@ -48,6 +51,12 @@ export interface Env {
   // 招待コード。通常は初期設定時に自動生成して DB (settings) に保存される。
   // 環境変数/Secret で固定したい場合のみ設定(設定されていれば DB より優先)
   INVITE_CODE?: string;
+  // AI意思決定OS: 役割(メンター等)を動かす LLM の APIキー。Secret で設定する。
+  //   npx wrangler secret put ANTHROPIC_API_KEY
+  // 未設定でもアプリは動く(スタブ応答)。
+  ANTHROPIC_API_KEY?: string;
+  OPENAI_API_KEY?: string;
+  GEMINI_API_KEY?: string;
 }
 
 // 有効な招待コード(環境変数 > DB設定)
@@ -283,6 +292,11 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
     return json({ ...base, projects, memories, tasks, conversations });
   }
 
+  // /os/… … AI意思決定OS (チャット + メンター)
+  if (head === "os") {
+    return handleOsApi(req, db, uid, env, rest.slice(1), url);
+  }
+
   return notFound();
 }
 
@@ -293,6 +307,7 @@ export default {
 
     // テーブルは初回アクセス時に自動作成(CLI不要でブラウザだけで導入できるように)
     await ensureSchema(env.DB);
+    await ensureOsSchema(env.DB);
 
     if (seg.length === 0) {
       // まだ誰も登録されていなければ初期設定ページ(オーナー登録)を表示
@@ -360,6 +375,13 @@ export default {
       const user = await getUserByToken(env.DB, token);
       if (!user) return unauthorized();
       return html(renderApp());
+    }
+
+    // AI意思決定OS アプリ画面 (チャット + メンター)
+    if (area === "os") {
+      const user = await getUserByToken(env.DB, token);
+      if (!user) return unauthorized();
+      return html(renderOsApp());
     }
 
     if (area === "api") {
