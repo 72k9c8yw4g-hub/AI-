@@ -73,7 +73,7 @@ export async function callLLM(
 function stubReply(history: ChatMsg[]): string {
   const last = [...history].reverse().find((m) => m.role === "user");
   const q = last ? last.content.slice(0, 60) : "";
-  return `(メンター・スタブ応答) まだ LLM の API キーが接続されていません。設定で ANTHROPIC_API_KEY などを登録すると、ここに実際の思考が入ります。\n受け取った論点: ${q || "(なし)"}`;
+  return `(スタブ応答) まだ LLM の API キーが接続されていません。設定で ANTHROPIC_API_KEY などを登録すると、ここに実際の思考が入ります。\n受け取った論点: ${q || "(なし)"}`;
 }
 
 async function callAnthropic(system: string, history: ChatMsg[], model: string, key: string): Promise<string> {

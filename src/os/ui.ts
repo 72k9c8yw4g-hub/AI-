@@ -89,6 +89,14 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .role input{flex:1;min-width:0;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}
 .role .save{margin-top:8px;background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;padding:6px 14px}
 .role .saved{color:#7ee0a1;font-size:12px;margin-left:8px}
+/* 作業AI会話ログ(閲覧専用) */
+.worklog{align-self:stretch;max-width:100%;border:1px dashed var(--line);border-radius:12px;margin:4px 0;background:var(--panel)}
+.worklog>summary{cursor:pointer;padding:10px 12px;font-size:13px;color:var(--muted);list-style:none;line-height:1.5}
+.worklog>summary::-webkit-details-marker{display:none}
+.worklog .wl{padding:0 12px 10px}
+.wmsg{border-top:1px solid var(--line);padding:8px 0}
+.wmsg .wn{font-size:11px;color:var(--accent);font-weight:700;margin-bottom:3px}
+.wmsg .wc{white-space:pre-wrap;font-size:13px;line-height:1.55}
 @media(min-width:820px){
  .drawer{position:static;transform:none;width:300px;flex:0 0 300px}
  .scrim{display:none}
@@ -103,6 +111,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
     <div class="title">🧭 AI意思決定OS</div>
     <div class="sub" id="subtitle">メンターと議論する</div>
   </div>
+  <button class="icon" id="runsBtn" title="AI会話ログ" style="font-size:18px">🗂</button>
   <button class="icon" id="settingsBtn" title="設定" style="font-size:18px">⚙️</button>
   <button class="icon" id="decisionsBtn" title="決定事項" style="font-size:18px">📌</button>
 </header>
@@ -120,7 +129,8 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
     <div class="msgs" id="msgs"></div>
     <div class="composer">
       <button class="icon" id="proposeBtn" title="この会話から決定を記録" style="align-self:flex-end;font-size:18px">📝</button>
-      <textarea id="input" rows="1" placeholder="メンターに相談…（Shift+Enterで改行）"></textarea>
+      <button class="icon" id="delegateBtn" title="入力を作業AIに振る" style="align-self:flex-end;font-size:18px">🛠</button>
+      <textarea id="input" rows="1" placeholder="メンターに相談…（🛠で作業AIに委任）"></textarea>
       <button class="primary" id="sendBtn">送信</button>
     </div>
   </main>
@@ -140,6 +150,10 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
     <div class="keys" id="keyStatus"></div>
     <div id="roleList"></div>
   </div>
+</div>
+<div class="panel" id="runPanel">
+  <div class="panel-h"><b>🗂 AI会話ログ（閲覧専用）</b><button id="runClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-body" id="runBody"></div>
 </div>
 <script>
 var TOKEN = location.pathname.split('/').filter(Boolean)[1] || '';
@@ -345,6 +359,62 @@ function renderDec(tab){
       (m.tags?'<div class="dm" style="margin-top:6px">#'+esc(m.tags).split(',').join(' #')+'</div>':'');
     body.appendChild(d);
   });
+}
+
+// ── 作業AI(委任 + AI会話ログ)──
+function workLogNode(log){
+  var d=document.createElement('details'); d.className='worklog';
+  var inner='<summary>🛠 作業AI会話ログ（'+log.length+'ターン・閲覧専用） ▼</summary><div class="wl">';
+  log.forEach(function(m){ inner+='<div class="wmsg"><div class="wn">'+esc(m.name||m.role)+'</div><div class="wc">'+esc(m.content)+'</div></div>'; });
+  inner+='</div>'; d.innerHTML=inner; return d;
+}
+function delegate(){
+  if(sending)return;
+  if(current==null){alert('先に会話を始めてください');return;}
+  var text=el('input').value.trim();
+  if(!text){alert('作業AIに振るタスクを入力してください');return;}
+  sending=true; el('sendBtn').disabled=true; el('delegateBtn').disabled=true;
+  el('input').value=''; el('input').style.height='auto';
+  var box=el('msgs'); if(box.querySelector('.empty'))box.innerHTML='';
+  var row=document.createElement('div'); row.className='row user';
+  row.innerHTML='<div class="who">あなた → 作業AI</div><div class="bubble">'+esc(text)+'</div>';
+  box.appendChild(row);
+  var note=document.createElement('div'); note.className='typing'; note.id='wtyping'; note.textContent='🛠 作業AIが検討中…（メンターが整理します）';
+  box.appendChild(note); box.scrollTop=box.scrollHeight;
+  api('/chats/'+current+'/delegate',{method:'POST',body:JSON.stringify({task:text})}).then(function(d){
+    var t=el('wtyping'); if(t)t.remove();
+    if(d.log&&d.log.length) box.appendChild(workLogNode(d.log));
+    if(d.mentor) box.appendChild(msgNode(d.mentor));
+    box.scrollTop=box.scrollHeight; loadChats();
+  }).catch(function(e){var t=el('wtyping');if(t)t.remove();var er=document.createElement('div');er.className='typing';er.textContent='エラー: '+e.message;box.appendChild(er)})
+    .then(function(){sending=false;el('sendBtn').disabled=false;el('delegateBtn').disabled=false});
+}
+el('delegateBtn').onclick=delegate;
+
+function openRuns(){el('runPanel').classList.add('open');loadRuns()}
+el('runsBtn').onclick=openRuns;
+el('runClose').onclick=function(){el('runPanel').classList.remove('open')};
+function loadRuns(){
+  el('runBody').innerHTML='<div class="empty2">読み込み中…</div>';
+  api('/runs').then(function(d){
+    if(!d.runs.length){el('runBody').innerHTML='<div class="empty2">作業AIのログはまだありません。<br>会話で 🛠 からタスクを振ると、ここに残ります。</div>';return;}
+    var body=el('runBody'); body.innerHTML='';
+    d.runs.forEach(function(r){
+      var det=document.createElement('details'); det.className='worklog'; det.style.marginBottom='10px';
+      det.innerHTML='<summary>🛠 '+esc(r.task)+'<br><span style="font-size:11px;opacity:.7">'+esc(r.created_at)+' · '+esc(r.status)+'</span></summary><div class="wl"><div class="empty2" style="padding:10px">開いて読み込み中…</div></div>';
+      det.addEventListener('toggle',function(){
+        if(det.open && det.dataset.loaded!=='1'){
+          det.dataset.loaded='1';
+          api('/runs/'+r.id).then(function(rd){
+            var wl=det.querySelector('.wl'); wl.innerHTML='';
+            rd.log.forEach(function(m){ var x=document.createElement('div'); x.className='wmsg'; x.innerHTML='<div class="wn">'+esc(m.name||m.role)+'</div><div class="wc">'+esc(m.content)+'</div>'; wl.appendChild(x); });
+            if(rd.run&&rd.run.summary){ var s=document.createElement('div'); s.className='wmsg'; s.innerHTML='<div class="wn">🧭 メンター整理（ユーザーへ提示）</div><div class="wc">'+esc(rd.run.summary)+'</div>'; wl.appendChild(s); }
+          }).catch(function(e){det.querySelector('.wl').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
+        }
+      });
+      body.appendChild(det);
+    });
+  }).catch(function(e){el('runBody').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
 }
 
 // ── 役割別モデル設定 ──

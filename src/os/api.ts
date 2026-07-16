@@ -2,22 +2,28 @@
 // index.ts の handleApi から head === "os" のとき委譲される。認証済み userId を受け取る。
 
 import { anyKeyPresent, type LlmSecrets } from "./provider";
-import { runMentorTurn, runRecorderTurn, runMonitorTurn } from "./org";
+import { runMentorTurn, runRecorderTurn, runMonitorTurn, runWorkerTask, runMentorConsolidation } from "./org";
 import {
   activeDecisionList,
   addMessage,
+  addWorkerMsg,
   approveCandidate,
   autoTitleIfNeeded,
   createCandidate,
   createChat,
+  createWorkerRun,
   deleteChat,
+  finishWorkerRun,
   getChat,
   getRoleModel,
+  getWorkerLog,
+  getWorkerRun,
   listChats,
   listDecisions,
   listMessages,
   listPendingCandidates,
   listRoleModels,
+  listWorkerRuns,
   rejectCandidate,
   renameChat,
   setRoleModel,
@@ -89,6 +95,40 @@ export async function handleOsApi(
       return json({ user: userMsg, mentor: mentorMsg, monitor: monitorMsg, stub: result.stub });
     }
 
+    // POST /os/chats/<id>/delegate … 作業AIにタスクを委任(協働→メンター整理→メイン会話へ)
+    if (action === "delegate" && method === "POST") {
+      const chat = await getChat(db, userId, id);
+      if (!chat) return notFound();
+      const body = (await req.json().catch(() => ({}))) as { task?: unknown };
+      const task = (typeof body.task === "string" ? body.task : "").trim();
+      if (!task) return json({ error: "task が空です" }, 400);
+
+      await addMessage(db, userId, id, "user", task);
+      await autoTitleIfNeeded(db, userId, id, task);
+
+      // 背景 = 直近の会話(監視官・システムは中継しないので除く)
+      const hist = await listMessages(db, userId, id);
+      const ctx = hist
+        .slice(-8)
+        .filter((m) => m.role !== "monitor" && m.role !== "system")
+        .map((m) => `${m.role === "user" ? "ユーザー" : m.role === "mentor" ? "メンター" : m.name || m.role}: ${m.content}`)
+        .join("\n");
+
+      const run = await createWorkerRun(db, userId, id, task);
+      const wrm = await getRoleModel(db, userId, "worker");
+      const wr = await runWorkerTask(task, ctx, wrm, secrets);
+      let seq = 1;
+      for (const item of wr.log) await addWorkerMsg(db, userId, run.id, seq++, item.role, item.name, item.content);
+
+      // 成果物はメンターが検証・整理してからユーザーに提示(直接は出さない)
+      const mrm = await getRoleModel(db, userId, "mentor");
+      const cons = await runMentorConsolidation(task, wr.deliverable, mrm, secrets);
+      const mentorMsg = await addMessage(db, userId, id, "mentor", `🛠【作業AIの成果・メンター整理】\n${cons.text}`);
+      await finishWorkerRun(db, userId, run.id, cons.text);
+
+      return json({ run: { ...run, status: "done" }, log: wr.log, mentor: mentorMsg, stub: wr.stub || cons.stub });
+    }
+
     // POST /os/chats/<id>/propose … 記録官が会話から保存候補を生成(まだ保存しない)
     if (action === "propose" && method === "POST") {
       const chat = await getChat(db, userId, id);
@@ -145,6 +185,18 @@ export async function handleOsApi(
     const { active, archived } = await listDecisions(db, userId);
     const pending = await listPendingCandidates(db, userId);
     return json({ active, archived, pending });
+  }
+
+  // /os/runs … 作業AIのアサイン履歴と AI会話ログ(閲覧専用)
+  if (head === "runs") {
+    if (!rest[1] && method === "GET") return json({ runs: await listWorkerRuns(db, userId) });
+    const rid = Number(rest[1]);
+    if (Number.isInteger(rid) && rid > 0 && method === "GET") {
+      const run = await getWorkerRun(db, userId, rid);
+      if (!run) return notFound();
+      return json({ run, log: await getWorkerLog(db, userId, rid) });
+    }
+    return notFound();
   }
 
   // /os/roles … 役割別モデル設定(技術設計書 第4-5章)

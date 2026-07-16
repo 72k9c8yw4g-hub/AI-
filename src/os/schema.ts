@@ -55,6 +55,31 @@ const OS_STATEMENTS: string[] = [
     decided_at    TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_os_candidates_user ON os_candidates(user_id, status)`,
+  // os_worker_runs … 作業AIへの1アサイン(run)。成果物はメンターが整理して summary に。
+  // status: running / done / failed
+  `CREATE TABLE IF NOT EXISTS os_worker_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    chat_id     INTEGER REFERENCES os_chats(id),
+    task        TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'running',
+    summary     TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    done_at     TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_os_worker_runs_user ON os_worker_runs(user_id)`,
+  // os_worker_msgs … AI会話ログ(作業AI同士の議論)。閲覧専用。実装準備第9章 AI会話画面。
+  `CREATE TABLE IF NOT EXISTS os_worker_msgs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id      INTEGER NOT NULL REFERENCES os_worker_runs(id),
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    role        TEXT NOT NULL DEFAULT 'worker',
+    name        TEXT NOT NULL DEFAULT '',
+    content     TEXT NOT NULL,
+    seq         INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_os_worker_msgs_run ON os_worker_msgs(run_id)`,
 ];
 
 let osSchemaReady = false;

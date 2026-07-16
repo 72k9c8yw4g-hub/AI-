@@ -259,3 +259,64 @@ export async function listRoleModels(db: D1Database, userId: number): Promise<{ 
   }
   return out;
 }
+
+// ── 作業AI (os_worker_runs / os_worker_msgs) ──────────────
+export interface WorkerRun {
+  id: number;
+  chat_id: number | null;
+  task: string;
+  status: string;
+  summary: string;
+  created_at: string;
+  done_at: string | null;
+}
+export interface WorkerMsg {
+  id: number;
+  role: string;
+  name: string;
+  content: string;
+  seq: number;
+  created_at: string;
+}
+
+export async function createWorkerRun(db: D1Database, userId: number, chatId: number, task: string): Promise<WorkerRun> {
+  const row = await db
+    .prepare(`INSERT INTO os_worker_runs (user_id, chat_id, task) VALUES (?, ?, ?) RETURNING id, chat_id, task, status, summary, created_at, done_at`)
+    .bind(userId, chatId, task)
+    .first<WorkerRun>();
+  if (!row) throw new Error("作業AI run の作成に失敗しました");
+  return row;
+}
+
+export async function addWorkerMsg(db: D1Database, userId: number, runId: number, seq: number, role: string, name: string, content: string): Promise<void> {
+  await db
+    .prepare(`INSERT INTO os_worker_msgs (run_id, user_id, role, name, content, seq) VALUES (?, ?, ?, ?, ?, ?)`)
+    .bind(runId, userId, role, name, content, seq)
+    .run();
+}
+
+export async function finishWorkerRun(db: D1Database, userId: number, runId: number, summary: string, status = "done"): Promise<void> {
+  await db
+    .prepare(`UPDATE os_worker_runs SET status = ?, summary = ?, done_at = datetime('now') WHERE id = ? AND user_id = ?`)
+    .bind(status, summary, runId, userId)
+    .run();
+}
+
+export async function listWorkerRuns(db: D1Database, userId: number, chatId?: number): Promise<WorkerRun[]> {
+  const sql = `SELECT id, chat_id, task, status, summary, created_at, done_at FROM os_worker_runs WHERE user_id = ?${chatId ? " AND chat_id = ?" : ""} ORDER BY id DESC LIMIT 100`;
+  const stmt = chatId ? db.prepare(sql).bind(userId, chatId) : db.prepare(sql).bind(userId);
+  const { results } = await stmt.all<WorkerRun>();
+  return results;
+}
+
+export async function getWorkerRun(db: D1Database, userId: number, id: number): Promise<WorkerRun | null> {
+  return db.prepare(`SELECT id, chat_id, task, status, summary, created_at, done_at FROM os_worker_runs WHERE id = ? AND user_id = ?`).bind(id, userId).first<WorkerRun>();
+}
+
+export async function getWorkerLog(db: D1Database, userId: number, runId: number): Promise<WorkerMsg[]> {
+  const { results } = await db
+    .prepare(`SELECT id, role, name, content, seq, created_at FROM os_worker_msgs WHERE run_id = ? AND user_id = ? ORDER BY seq ASC, id ASC`)
+    .bind(runId, userId)
+    .all<WorkerMsg>();
+  return results;
+}

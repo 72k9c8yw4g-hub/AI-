@@ -264,3 +264,51 @@ export const WARNING_LABEL: Record<WarningType, string> = {
   contradiction: "矛盾",
   drift: "目的離脱",
 };
+
+// ── 作業AI群 ────────────────────────────────────────────
+// 憲法第9章/運用第7章: 実行部隊。作業AI同士で議論し結論に収束。成果物は直接ユーザーに
+// 出さず、メンターが検証・整理してから提示する。ループ防止のためターン数は固定で上限する。
+
+export const WORKER_SYSTEM = `あなたは「AI意思決定OS」の作業AIです。実行部隊として、与えられたタスクを具体的に遂行します。
+- 技術的判断・調査・分析・実装方針・改善提案を、根拠とともに具体的に示す。
+- 成果物はユーザーに直接出さない。メンターが検証・整理する前提で、要点を明確にまとめる。
+- 冗長にしない。実行可能な結論に収束させる。`;
+
+export interface WorkerLogItem {
+  role: string;
+  name: string;
+  content: string;
+}
+export interface WorkerResult {
+  log: WorkerLogItem[];
+  deliverable: string;
+  stub: boolean;
+}
+
+// 作業AIの協働: 作業AI-1が草案 → 作業AI-2がレビュー → 作業AI-1が最終化。
+// 固定3ターンで必ず収束させる(無限ループ防止 = 運用第7章/技術第6章)。
+export async function runWorkerTask(task: string, context: string, rm: RoleModel, secrets: LlmSecrets): Promise<WorkerResult> {
+  const base = `${WORKER_SYSTEM}\n\n# 背景(会話の要約)\n${context || "(なし)"}\n\n# タスク\n${task}`;
+  const log: WorkerLogItem[] = [];
+  let stub = false;
+
+  const a1 = await callLLM(`${base}\n\nあなたは作業AI-1。まずタスクの草案(方針と具体策)を作成してください。`, [{ role: "user", content: "草案を作成してください。" }], rm, secrets);
+  stub = stub || a1.stub;
+  log.push({ role: "worker", name: "作業AI-1", content: a1.text });
+
+  const b1 = await callLLM(`${base}\n\nあなたは作業AI-2。作業AI-1の草案を批判的にレビューし、抜け・リスク・改善点を指摘してください。`, [{ role: "user", content: `作業AI-1の草案:\n${a1.text}\n\nレビューしてください。` }], rm, secrets);
+  stub = stub || b1.stub;
+  log.push({ role: "worker", name: "作業AI-2", content: b1.text });
+
+  const a2 = await callLLM(`${base}\n\nあなたは作業AI-1。作業AI-2のレビューを踏まえて、最終成果物をまとめてください。`, [{ role: "user", content: `作業AI-2のレビュー:\n${b1.text}\n\n最終成果物をまとめてください。` }], rm, secrets);
+  stub = stub || a2.stub;
+  log.push({ role: "worker", name: "作業AI-1(最終)", content: a2.text });
+
+  return { log, deliverable: a2.text, stub };
+}
+
+// メンターが作業AIの成果物を検証・整理してユーザー向けに提示する(成果物はメンター経由)。
+export async function runMentorConsolidation(task: string, deliverable: string, rm: RoleModel, secrets: LlmSecrets): Promise<LlmResult> {
+  const sys = `${MENTOR_SYSTEM}\n\nあなたは作業AIから成果物を受け取りました。共同創業者として成果物を検証し、要点を整理してユーザーに提示してください。不足やリスクがあれば率直に指摘してください。`;
+  return callLLM(sys, [{ role: "user", content: `タスク: ${task}\n\n作業AIの成果物:\n${deliverable}\n\nこれを検証・整理して、ユーザーに提示してください。` }], rm, secrets);
+}
