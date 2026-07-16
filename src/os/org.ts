@@ -68,3 +68,98 @@ function toHistory(msgs: StoredMsg[]): ChatMsg[] {
 export async function runMentorTurn(msgs: StoredMsg[], rm: RoleModel, secrets: LlmSecrets): Promise<LlmResult> {
   return callLLM(MENTOR_SYSTEM, toHistory(msgs), rm, secrets);
 }
+
+// ── 記録官 ──────────────────────────────────────────────
+// 運用設計書 第8章: 結論が出た内容のみを保存候補化する。人間向け要約 + AI復元用データを必ず含む。
+// 保存はユーザーの明示的承認を経てから(無承認保存禁止)。ここでは「候補」を作るだけ。
+
+export interface Candidate {
+  kind: string; // decision / note / memory
+  title: string;
+  content: string;
+  tags: string;
+  summary: string; // 人間向けの短い要約(サマリー無し提示は禁止)
+  supersedes_id: number | null; // 既存の決定を更新する場合、その決定ID
+}
+
+export interface ProposeResult {
+  save: boolean;
+  candidate: Candidate | null;
+  stub: boolean;
+}
+
+export interface ActiveDecision {
+  id: number;
+  title: string;
+}
+
+export const RECORDER_SYSTEM = `あなたは「AI意思決定OS」の記録官です。会話から保存すべき結論を最大1件だけ抽出します。
+- 保存対象は「結論が出た決定・確定した仕様・確定ルール」のみ。議論の途中経過・雑談・未確定の案は保存しない。
+- 必ず次のJSONだけを出力する(前後に説明文を付けない):
+{"save": true, "kind": "decision", "title": "結論を一文で", "content": "決定の内容・理由・影響範囲", "tags": "カンマ区切りの短いタグ", "summary": "人間向けの短い要約", "supersedes_id": null}
+- 保存に値する確定した結論がなければ {"save": false} だけを返す。
+- 現在有効な決定(Active)の一覧を渡す。新しい結論が明らかにそのどれかを更新・変更する内容なら、supersedes_id にそのIDを入れる(そうでなければ null)。`;
+
+function activeDecisionsText(active: ActiveDecision[]): string {
+  if (!active.length) return "現在有効な決定(Active): なし";
+  return "現在有効な決定(Active):\n" + active.map((d) => `- [ID ${d.id}] ${d.title}`).join("\n");
+}
+
+function transcript(msgs: StoredMsg[]): string {
+  return msgs
+    .filter((m) => m.role !== "system")
+    .map((m) => `${m.role === "user" ? "ユーザー" : ROLE_LABELS[m.role] || m.role}: ${m.content}`)
+    .join("\n");
+}
+
+// LLM 出力から最初の JSON ブロックを取り出して候補に整形。壊れていたら null。
+function parseCandidate(text: string): Candidate | null {
+  try {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    const o = JSON.parse(m[0]) as Record<string, unknown>;
+    if (!o || o.save === false) return null;
+    const title = String(o.title ?? "").trim();
+    const content = String(o.content ?? "").trim();
+    if (!title && !content) return null;
+    const kind = typeof o.kind === "string" && ["decision", "note", "memory"].includes(o.kind) ? o.kind : "decision";
+    const sup = Number(o.supersedes_id);
+    return {
+      kind,
+      title: title.slice(0, 200),
+      content: (content || title).slice(0, 5000),
+      tags: String(o.tags ?? "").slice(0, 200),
+      summary: String(o.summary ?? title).slice(0, 300),
+      supersedes_id: Number.isInteger(sup) && sup > 0 ? sup : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// キー未設定時: 直近のユーザー発言から素朴な候補を作る(承認フローをキー無しでも試せるように)。
+function stubCandidate(msgs: StoredMsg[]): Candidate | null {
+  const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+  if (!lastUser) return null;
+  const t = lastUser.content.replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  return { kind: "decision", title: t.slice(0, 40), content: t.slice(0, 2000), tags: "", summary: "(スタブ生成) " + t.slice(0, 60), supersedes_id: null };
+}
+
+// 会話から保存候補を1件生成する(記録官)。保存はまだしない — 承認待ちの候補を返すだけ。
+export async function runRecorderTurn(
+  msgs: StoredMsg[],
+  active: ActiveDecision[],
+  rm: RoleModel,
+  secrets: LlmSecrets
+): Promise<ProposeResult> {
+  const system = `${RECORDER_SYSTEM}\n\n${activeDecisionsText(active)}`;
+  const input: ChatMsg[] = [{ role: "user", content: `次の会話から保存候補を抽出してください:\n\n${transcript(msgs)}` }];
+  const res = await callLLM(system, input, rm, secrets);
+  if (res.stub) {
+    const c = stubCandidate(msgs);
+    return { save: !!c, candidate: c, stub: true };
+  }
+  const c = parseCandidate(res.text);
+  return { save: !!c, candidate: c, stub: false };
+}

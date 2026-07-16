@@ -35,6 +35,26 @@ const OS_STATEMENTS: string[] = [
     updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, role)
   )`,
+  // os_candidates … 記録官が生成した「保存候補」。運用第8章: 無承認保存禁止 → 承認されるまでここに留まる。
+  // status: pending(承認待ち) / approved(承認→決定事項に保存済み) / rejected(却下)
+  // memory_id: 承認時に作られた決定(memories)のID。chat_id と併せて「元チャット追跡」に使う。
+  `CREATE TABLE IF NOT EXISTS os_candidates (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id),
+    chat_id       INTEGER REFERENCES os_chats(id),
+    kind          TEXT NOT NULL DEFAULT 'decision',
+    title         TEXT NOT NULL DEFAULT '',
+    content       TEXT NOT NULL DEFAULT '',
+    tags          TEXT NOT NULL DEFAULT '',
+    project       TEXT NOT NULL DEFAULT '',
+    summary       TEXT NOT NULL DEFAULT '',
+    supersedes_id INTEGER,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    memory_id     INTEGER,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_at    TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_os_candidates_user ON os_candidates(user_id, status)`,
 ];
 
 let osSchemaReady = false;

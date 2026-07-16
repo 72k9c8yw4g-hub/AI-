@@ -2,6 +2,7 @@
 // すべて user_id スコープ。既存 Dscribe の分離方針(ユーザーごとに完全独立)を踏襲する。
 
 import { DEFAULT_MODELS, type Provider, type RoleModel } from "./provider";
+import { saveMemory, listMemories, type MemoryRow } from "../db";
 
 export interface OsChat {
   id: number;
@@ -140,4 +141,108 @@ export async function setRoleModel(db: D1Database, userId: number, role: string,
     .bind(userId, role, provider, (typeof model === "string" ? model : "").trim().slice(0, 80))
     .run();
   return true;
+}
+
+// ── 保存候補 (os_candidates) ──────────────────────────────
+export interface OsCandidate {
+  id: number;
+  chat_id: number | null;
+  kind: string;
+  title: string;
+  content: string;
+  tags: string;
+  project: string;
+  summary: string;
+  supersedes_id: number | null;
+  status: string;
+  memory_id: number | null;
+  created_at: string;
+  decided_at: string | null;
+}
+
+export interface CandidateInput {
+  kind: string;
+  title: string;
+  content: string;
+  tags: string;
+  summary: string;
+  supersedes_id: number | null;
+  project?: string;
+}
+
+export async function createCandidate(db: D1Database, userId: number, chatId: number | null, c: CandidateInput): Promise<OsCandidate> {
+  const row = await db
+    .prepare(
+      `INSERT INTO os_candidates (user_id, chat_id, kind, title, content, tags, project, summary, supersedes_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
+    )
+    .bind(userId, chatId, c.kind, c.title, c.content, c.tags, c.project ?? "", c.summary, c.supersedes_id)
+    .first<OsCandidate>();
+  if (!row) throw new Error("保存候補の作成に失敗しました");
+  return row;
+}
+
+export async function getCandidate(db: D1Database, userId: number, id: number): Promise<OsCandidate | null> {
+  return db.prepare(`SELECT * FROM os_candidates WHERE id = ? AND user_id = ?`).bind(id, userId).first<OsCandidate>();
+}
+
+export async function listPendingCandidates(db: D1Database, userId: number, chatId?: number): Promise<OsCandidate[]> {
+  const sql = `SELECT * FROM os_candidates WHERE user_id = ? AND status = 'pending'${chatId ? " AND chat_id = ?" : ""} ORDER BY id DESC`;
+  const stmt = chatId ? db.prepare(sql).bind(userId, chatId) : db.prepare(sql).bind(userId);
+  const { results } = await stmt.all<OsCandidate>();
+  return results;
+}
+
+// 承認 = 明示的承認。決定事項(memories kind=decision)として保存する。無承認では決して保存しない。
+export async function approveCandidate(
+  db: D1Database,
+  userId: number,
+  id: number
+): Promise<{ ok: boolean; memory?: MemoryRow; error?: string }> {
+  const c = await getCandidate(db, userId, id);
+  if (!c) return { ok: false, error: "保存候補が見つかりません" };
+  if (c.status !== "pending") return { ok: false, error: `この候補は既に処理済みです (${c.status})` };
+  let memory: MemoryRow;
+  try {
+    memory = await saveMemory(db, userId, {
+      content: c.content || c.title,
+      title: c.title,
+      kind: c.kind,
+      tags: c.tags,
+      project: c.project || undefined,
+      source: "recorder",
+      supersedes: c.supersedes_id ?? undefined,
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  await db
+    .prepare(`UPDATE os_candidates SET status = 'approved', memory_id = ?, decided_at = datetime('now') WHERE id = ? AND user_id = ?`)
+    .bind(memory.id, id, userId)
+    .run();
+  return { ok: true, memory };
+}
+
+export async function rejectCandidate(db: D1Database, userId: number, id: number): Promise<boolean> {
+  const r = await db
+    .prepare(`UPDATE os_candidates SET status = 'rejected', decided_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'`)
+    .bind(id, userId)
+    .run();
+  return (r.meta.changes ?? 0) > 0;
+}
+
+// ── 決定事項 (Dscribe memories kind=decision を転用) ──────────
+// Active = superseded_by_id が NULL / Archived = 置き換え済み。憲法第8章のコンフリクトルールに一致。
+export async function listDecisions(db: D1Database, userId: number): Promise<{ active: MemoryRow[]; archived: MemoryRow[] }> {
+  const all = await listMemories(db, userId, { kind: "decision", limit: 500 });
+  return {
+    active: all.filter((m) => !m.superseded_by_id),
+    archived: all.filter((m) => m.superseded_by_id),
+  };
+}
+
+// 記録官に渡す「現在有効な決定」の一覧(ID + タイトル)。
+export async function activeDecisionList(db: D1Database, userId: number): Promise<{ id: number; title: string }[]> {
+  const all = await listMemories(db, userId, { kind: "decision", limit: 200, activeOnly: true });
+  return all.map((m) => ({ id: m.id, title: m.title || m.content.slice(0, 40) }));
 }

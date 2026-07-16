@@ -47,6 +47,36 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .composer{flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--panel)}
 .composer textarea{flex:1;resize:none;max-height:140px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;line-height:1.5}
 .composer button{align-self:flex-end}
+/* 保存候補カード */
+.card{align-self:stretch;max-width:100%;background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:12px 14px;margin:4px 0}
+.card .ch{font-size:12px;color:var(--accent);font-weight:700;margin-bottom:6px}
+.card .ct{font-weight:700;margin-bottom:6px;line-height:1.5}
+.card .cb{white-space:pre-wrap;line-height:1.6;font-size:14px}
+.card .cs{font-size:12px;color:var(--muted);margin-top:8px}
+.card .ca{display:flex;gap:8px;margin-top:12px}
+.card .ca button{flex:1}
+.card .approve{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.card.done{border-color:var(--line)}
+/* 決定事項パネル */
+.panel{position:fixed;inset:0;background:var(--bg);z-index:30;display:none;flex-direction:column;padding-top:env(safe-area-inset-top)}
+.panel.open{display:flex}
+.panel-h{display:flex;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid var(--line);font-size:16px}
+.panel-h button{background:none;border:none;font-size:20px;padding:4px 8px}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs .tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);padding:12px}
+.tabs .tab.active{color:var(--text);border-bottom-color:var(--accent);font-weight:700}
+.panel-body{flex:1;overflow:auto;padding:12px;-webkit-overflow-scrolling:touch}
+.dec{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--panel)}
+.dec.arch{opacity:.6}
+.dec .dt{font-weight:700;margin:4px 0}
+.dec .dm{font-size:12px;color:var(--muted)}
+.dec .db{white-space:pre-wrap;font-size:14px;line-height:1.6;margin-top:6px}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;margin-right:6px}
+.badge.active{background:#12331d;color:#7ee0a1}
+.badge.arch{background:#3a2a12;color:#f0c98b}
+.drawer .df{padding:12px;border-top:1px solid var(--line)}
+.drawer .df a{color:var(--accent);text-decoration:none;font-size:13px}
+.empty2{color:var(--muted);text-align:center;padding:30px 12px;font-size:14px;line-height:1.7}
 @media(min-width:820px){
  .drawer{position:static;transform:none;width:300px;flex:0 0 300px}
  .scrim{display:none}
@@ -61,7 +91,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
     <div class="title">🧭 AI意思決定OS</div>
     <div class="sub" id="subtitle">メンターと議論する</div>
   </div>
-  <a href="#" id="recordsLink" class="sub" style="color:var(--accent);text-decoration:none">記録 ↗</a>
+  <button class="icon" id="decisionsBtn" title="決定事項" style="font-size:18px">📌</button>
 </header>
 <div class="wrap">
   <div class="scrim" id="scrim"></div>
@@ -70,15 +100,26 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
       <button class="primary" id="newChatBtn" style="flex:1">＋ 新しい会話</button>
     </div>
     <div class="chatlist" id="chatlist"></div>
+    <div class="df"><a id="recordsLink" href="#">🧠 Dscribe 記録ダッシュボード ↗</a></div>
   </aside>
   <main>
     <div class="banner" id="banner" style="display:none"></div>
     <div class="msgs" id="msgs"></div>
     <div class="composer">
+      <button class="icon" id="proposeBtn" title="この会話から決定を記録" style="align-self:flex-end;font-size:18px">📝</button>
       <textarea id="input" rows="1" placeholder="メンターに相談…（Shift+Enterで改行）"></textarea>
       <button class="primary" id="sendBtn">送信</button>
     </div>
   </main>
+</div>
+<div class="panel" id="decPanel">
+  <div class="panel-h"><b>📌 決定事項</b><button id="decClose" aria-label="閉じる">✕</button></div>
+  <div class="tabs">
+    <button class="tab active" data-tab="active">Active</button>
+    <button class="tab" data-tab="pending">承認待ち</button>
+    <button class="tab" data-tab="archived">Archived</button>
+  </div>
+  <div class="panel-body" id="decBody"></div>
 </div>
 <script>
 var TOKEN = location.pathname.split('/').filter(Boolean)[1] || '';
@@ -202,6 +243,84 @@ el('sendBtn').onclick=send;
 var inp=el('input');
 inp.addEventListener('input',function(){inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,140)+'px'});
 inp.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+
+// ── 保存候補(記録官)──
+function cardHtml(c){
+  return '<div class="ch">📝 保存候補 · '+esc(c.kind)+'</div>'+
+    '<div class="ct">'+esc(c.title)+'</div>'+
+    (c.content?'<div class="cb">'+esc(c.content)+'</div>':'')+
+    (c.summary?'<div class="cs">要約: '+esc(c.summary)+'</div>':'')+
+    (c.tags?'<div class="cs">#'+esc(c.tags).split(',').join(' #')+'</div>':'')+
+    (c.supersedes_id?'<div class="cs">既存の決定 #'+c.supersedes_id+' を更新</div>':'')+
+    '<div class="ca"><button class="approve">承認して保存</button><button class="reject">却下</button></div>';
+}
+function wireCard(card,c){
+  card.querySelector('.approve').onclick=function(){decide(card,c.id,'approve')};
+  card.querySelector('.reject').onclick=function(){decide(card,c.id,'reject')};
+}
+function renderCandidate(c){
+  var box=el('msgs'); var emp=box.querySelector('.empty'); if(emp)box.innerHTML='';
+  var card=document.createElement('div'); card.className='card'; card.innerHTML=cardHtml(c);
+  wireCard(card,c); box.appendChild(card); box.scrollTop=box.scrollHeight;
+}
+function decide(card,cid,act){
+  var btns=card.querySelectorAll('button'); Array.prototype.forEach.call(btns,function(b){b.disabled=true});
+  api('/candidates/'+cid+'/'+act,{method:'POST'}).then(function(){
+    card.classList.add('done');
+    card.innerHTML = act==='approve' ? '<div class="ch">✅ 決定事項に保存しました (Active)</div>' : '<div class="ch">🚫 却下しました</div>';
+  }).catch(function(e){alert(e.message);Array.prototype.forEach.call(btns,function(b){b.disabled=false})});
+}
+function propose(){
+  if(current==null){alert('先に会話を始めてください');return;}
+  var pb=el('proposeBtn'); pb.disabled=true;
+  var box=el('msgs'); if(box.querySelector('.empty'))box.innerHTML='';
+  var note=document.createElement('div'); note.className='typing'; note.textContent='記録官が保存候補を検討中…';
+  box.appendChild(note); box.scrollTop=box.scrollHeight;
+  api('/chats/'+current+'/propose',{method:'POST'}).then(function(r){
+    note.remove();
+    if(!r.save||!r.candidate){var n=document.createElement('div');n.className='typing';n.textContent='保存に値する確定した結論は見つかりませんでした。';box.appendChild(n);box.scrollTop=box.scrollHeight;return;}
+    renderCandidate(r.candidate);
+  }).catch(function(e){note.remove();alert(e.message)}).then(function(){pb.disabled=false});
+}
+el('proposeBtn').onclick=propose;
+
+// ── 決定事項パネル ──
+var decData=null;
+function openDecisions(){el('decPanel').classList.add('open');setActiveTab('active');loadDecisions('active')}
+function closeDecisions(){el('decPanel').classList.remove('open')}
+el('decisionsBtn').onclick=openDecisions;
+el('decClose').onclick=closeDecisions;
+function setActiveTab(tab){Array.prototype.forEach.call(document.querySelectorAll('.tabs .tab'),function(x){x.classList.toggle('active',x.getAttribute('data-tab')===tab)})}
+Array.prototype.forEach.call(document.querySelectorAll('.tabs .tab'),function(t){
+  t.onclick=function(){var tab=t.getAttribute('data-tab');setActiveTab(tab);loadDecisions(tab)};
+});
+function loadDecisions(tab){
+  el('decBody').innerHTML='<div class="empty2">読み込み中…</div>';
+  api('/decisions').then(function(d){decData=d;renderDec(tab)}).catch(function(e){el('decBody').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
+}
+function renderDec(tab){
+  if(!decData)return;
+  var body=el('decBody');
+  if(tab==='pending'){
+    var ps=decData.pending||[];
+    if(!ps.length){body.innerHTML='<div class="empty2">承認待ちの保存候補はありません。</div>';return;}
+    body.innerHTML='';
+    ps.forEach(function(c){var card=document.createElement('div');card.className='card';card.innerHTML=cardHtml(c);wireCard(card,c);body.appendChild(card)});
+    return;
+  }
+  var list = tab==='archived' ? (decData.archived||[]) : (decData.active||[]);
+  if(!list.length){body.innerHTML='<div class="empty2">'+(tab==='archived'?'アーカイブされた決定はありません。':'有効な決定はまだありません。<br>会話で結論を出して 📝 で記録してください。')+'</div>';return;}
+  body.innerHTML='';
+  list.forEach(function(m){
+    var d=document.createElement('div'); d.className='dec'+(tab==='archived'?' arch':'');
+    var badge = tab==='archived' ? '<span class="badge arch">Archived</span>' : '<span class="badge active">Active</span>';
+    d.innerHTML=badge+'<span class="dm">'+esc(m.created_at||'')+'</span>'+
+      '<div class="dt">'+esc(m.title||'(無題)')+'</div>'+
+      '<div class="db">'+esc(m.content||'')+'</div>'+
+      (m.tags?'<div class="dm" style="margin-top:6px">#'+esc(m.tags).split(',').join(' #')+'</div>':'');
+    body.appendChild(d);
+  });
+}
 
 renderMessages([]); loadStatus(); loadChats();
 </script>

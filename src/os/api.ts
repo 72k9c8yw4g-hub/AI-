@@ -2,16 +2,22 @@
 // index.ts の handleApi から head === "os" のとき委譲される。認証済み userId を受け取る。
 
 import { anyKeyPresent, type LlmSecrets } from "./provider";
-import { runMentorTurn } from "./org";
+import { runMentorTurn, runRecorderTurn } from "./org";
 import {
+  activeDecisionList,
   addMessage,
+  approveCandidate,
   autoTitleIfNeeded,
+  createCandidate,
   createChat,
   deleteChat,
   getChat,
   getRoleModel,
   listChats,
+  listDecisions,
   listMessages,
+  listPendingCandidates,
+  rejectCandidate,
   renameChat,
 } from "./db";
 
@@ -70,6 +76,20 @@ export async function handleOsApi(
       return json({ user: userMsg, mentor: mentorMsg, stub: result.stub });
     }
 
+    // POST /os/chats/<id>/propose … 記録官が会話から保存候補を生成(まだ保存しない)
+    if (action === "propose" && method === "POST") {
+      const chat = await getChat(db, userId, id);
+      if (!chat) return notFound();
+      const msgs = await listMessages(db, userId, id);
+      if (!msgs.length) return json({ save: false, reason: "まだ会話がありません" });
+      const active = await activeDecisionList(db, userId);
+      const rm = await getRoleModel(db, userId, "recorder");
+      const r = await runRecorderTurn(msgs, active, rm, secrets);
+      if (!r.save || !r.candidate) return json({ save: false, stub: r.stub });
+      const candidate = await createCandidate(db, userId, id, r.candidate);
+      return json({ save: true, candidate, stub: r.stub });
+    }
+
     if (!action) {
       // GET … チャット + 全メッセージ
       if (method === "GET") {
@@ -88,6 +108,30 @@ export async function handleOsApi(
       }
     }
     return notFound();
+  }
+
+  // /os/candidates … 保存候補の承認/却下(承認 = 明示的承認 → 決定事項に保存)
+  if (head === "candidates") {
+    if (!rest[1] && method === "GET") return json({ candidates: await listPendingCandidates(db, userId) });
+    const cid = Number(rest[1]);
+    if (Number.isInteger(cid) && cid > 0) {
+      const act = rest[2] ?? "";
+      if (act === "approve" && method === "POST") {
+        const r = await approveCandidate(db, userId, cid);
+        return r.ok ? json({ ok: true, memory: r.memory }) : json({ error: r.error }, 400);
+      }
+      if (act === "reject" && method === "POST") {
+        return (await rejectCandidate(db, userId, cid)) ? json({ ok: true }) : notFound();
+      }
+    }
+    return notFound();
+  }
+
+  // GET /os/decisions … 決定事項(Active / Archived / 承認待ち)
+  if (head === "decisions" && method === "GET") {
+    const { active, archived } = await listDecisions(db, userId);
+    const pending = await listPendingCandidates(db, userId);
+    return json({ active, archived, pending });
   }
 
   return notFound();
