@@ -61,7 +61,7 @@ a.btnlike{display:inline-block;background:var(--accent);color:#fff;border-radius
 </style>
 </head>
 <body>
-<header><span style="font-size:22px">🧠</span><div><h1>Dscribe <span class="sub">– Second Brain for Claude</span></h1></div><div class="sub" id="acct" style="margin-left:auto"></div></header>
+<header><span style="font-size:22px">🧠</span><div><h1>Dscribe <span class="sub">– Second Brain for Claude</span></h1></div><div class="sub" id="acct" style="margin-left:auto"></div><a id="osLink" href="#" style="text-decoration:none;border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:13px;color:var(--text);white-space:nowrap">🧭 意思決定OS</a></header>
 <nav id="nav"></nav>
 <main id="main"><div class="empty">読み込み中…</div></main>
 <dialog id="dlg"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b id="dlgTitle"></b><button class="ghost" onclick="document.getElementById('dlg').close()">✕ 閉じる</button></div><div class="viewer" id="dlgBody"></div><div style="margin-top:8px;text-align:center"><button class="primary" id="dlgMore" style="display:none">続きを読む</button></div></dialog>
@@ -408,6 +408,7 @@ function alertErr(e){ alert("エラー: " + e.message); }
 var VIEWS = {home:viewHome, tasks:viewTasks, memories:viewMemories, chats:viewChats, search:viewSearch, import:viewImport, export:viewExport, setup:viewSetup};
 var READONLY_NOTE = "このダッシュボードは閲覧専用です。追加・変更・削除は Claude との会話で頼んでください(第二の脳の管理者は AI)。";
 var ME = null;
+el("osLink").href = "/os/" + TOKEN;
 renderNav();
 api("/me").then(function(me){
   ME = me;

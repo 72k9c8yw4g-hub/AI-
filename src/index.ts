@@ -14,6 +14,7 @@ import { ensureSchema } from "./schema";
 import { ensureOsSchema } from "./os/schema";
 import { handleOsApi } from "./os/api";
 import { renderOsApp } from "./os/ui";
+import { ICON_192_B64, ICON_512_B64, iconPng, manifestFor, serviceWorker } from "./os/assets";
 import {
   getUserByToken,
   createUser,
@@ -377,11 +378,17 @@ export default {
       return html(renderApp());
     }
 
-    // AI意思決定OS アプリ画面 (チャット + メンター)
+    // AI意思決定OS アプリ画面 (チャット + 5役職) + PWA アセット
     if (area === "os") {
+      // 公開アセット(秘密情報なし)。SW は /os/ スコープでどのトークンのページも担当できる
+      if (token === "sw.js") return serviceWorker();
+      if (token === "icon-192.png") return iconPng(ICON_192_B64);
+      if (token === "icon-512.png") return iconPng(ICON_512_B64);
       const user = await getUserByToken(env.DB, token);
       if (!user) return unauthorized();
-      return html(renderOsApp());
+      // インストール後にそのユーザーのOSが直接開くよう、トークン入り manifest を返す
+      if (rest[0] === "manifest.webmanifest") return manifestFor(token);
+      return html(renderOsApp(token));
     }
 
     if (area === "api") {

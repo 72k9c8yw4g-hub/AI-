@@ -1,13 +1,21 @@
 // AI意思決定OS — アプリ画面 (ChatGPT型・スマホ主対象)。実装準備設計書 v1.0 第5章。
 // /os/<token> で配信。トークンはクライアント側で path から読み、/api/<token>/os/... を叩く。
 
-export function renderOsApp(): string {
+export function renderOsApp(token: string): string {
   return `<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AI意思決定OS</title>
+<link rel="manifest" href="/os/${token}/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/os/icon-192.png">
+<link rel="apple-touch-icon" href="/os/icon-192.png">
+<meta name="theme-color" content="#0f1115">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="意思決定OS">
 <style>
 :root{--bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2a2f3a;--text:#e7e9ee;--muted:#9aa2b1;--accent:#5b8cff;--user:#2b3550;--mentor:#1e252f;--warn:#3a2a12;}
 *{box-sizing:border-box}
@@ -122,7 +130,10 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
       <button class="primary" id="newChatBtn" style="flex:1">＋ 新しい会話</button>
     </div>
     <div class="chatlist" id="chatlist"></div>
-    <div class="df"><a id="recordsLink" href="#">🧠 Dscribe 記録ダッシュボード ↗</a></div>
+    <div class="df">
+      <a id="recordsLink" href="#">🧠 Dscribe 記録ダッシュボード ↗</a>
+      <button id="installBtn" style="display:none;width:100%;margin-top:10px">⬇ アプリとしてインストール</button>
+    </div>
   </aside>
   <main>
     <div class="banner" id="banner" style="display:none"></div>
@@ -449,6 +460,20 @@ function loadRoles(){
     });
   }).catch(function(e){el('roleList').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
 }
+
+// ── PWA: サービスワーカー登録 + インストールボタン ──
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('/os/sw.js',{scope:'/os/'}).catch(function(){}); }
+var deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault(); deferredPrompt=e;
+  el('installBtn').style.display='block';
+});
+el('installBtn').onclick=function(){
+  if(!deferredPrompt)return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(function(){deferredPrompt=null;el('installBtn').style.display='none'});
+};
+window.addEventListener('appinstalled',function(){el('installBtn').style.display='none'});
 
 renderMessages([]); loadStatus(); loadChats();
 </script>
