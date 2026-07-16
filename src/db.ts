@@ -319,7 +319,7 @@ export async function listMemories(
     binds.push(opts.project);
   }
   if (opts.activeOnly) conds.push("m.superseded_by_id IS NULL");
-  const limit = Math.min(Math.max(Number(opts.limit) || 50, 1), 200);
+  const limit = Math.min(Math.max(Number(opts.limit) || 50, 1), 2000);
   const { results } = await db
     .prepare(
       `SELECT m.id, m.kind, m.title, m.content, m.tags, m.source, p.name AS project, m.created_at,
@@ -504,7 +504,7 @@ export async function listTasks(
     conds.push("p.name = ?");
     binds.push(opts.project);
   }
-  const limit = Math.min(Math.max(Number(opts.limit) || 100, 1), 300);
+  const limit = Math.min(Math.max(Number(opts.limit) || 100, 1), 2000);
   const { results } = await db
     .prepare(
       `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, p.name AS project,
@@ -542,6 +542,38 @@ export async function deleteConversation(db: D1Database, userId: number, id: num
   await db.prepare("DELETE FROM messages WHERE conversation_id = ?").bind(id).run();
   const res = await db.prepare("DELETE FROM conversations WHERE id = ?").bind(id).run();
   return (res.meta.changes ?? 0) > 0;
+}
+
+// エクスポート用: 会話をメッセージ全文つきで返す(project 指定でそのプロジェクトのみ)
+export async function exportConversations(db: D1Database, userId: number, project?: string) {
+  const conds = ["c.user_id = ?"];
+  const binds: unknown[] = [userId];
+  if (project) {
+    conds.push("c.project_name = ?");
+    binds.push(project);
+  }
+  const { results: convs } = await db
+    .prepare(
+      `SELECT c.id, c.uuid, c.name, c.project_name, c.summary, c.created_at, c.updated_at
+       FROM conversations c WHERE ${conds.join(" AND ")} ORDER BY (c.updated_at IS NULL), c.updated_at DESC LIMIT 2000`
+    )
+    .bind(...binds)
+    .all<{ id: number; uuid: string; name: string; project_name: string; summary: string; created_at: string | null; updated_at: string | null }>();
+  const { results: msgs } = await db
+    .prepare(
+      `SELECT m.conversation_id, m.sender, m.text, m.created_at
+       FROM messages m JOIN conversations c ON c.id = m.conversation_id
+       WHERE ${conds.join(" AND ")} ORDER BY m.conversation_id, m.seq, m.id`
+    )
+    .bind(...binds)
+    .all<{ conversation_id: number; sender: string; text: string; created_at: string | null }>();
+  const byConv = new Map<number, { sender: string; text: string; created_at: string | null }[]>();
+  for (const m of msgs) {
+    const list = byConv.get(m.conversation_id) ?? [];
+    list.push({ sender: m.sender, text: m.text, created_at: m.created_at });
+    byConv.set(m.conversation_id, list);
+  }
+  return convs.map((c) => ({ ...c, messages: byConv.get(c.id) ?? [] }));
 }
 
 const CHAT_PAGE_CHARS = 6000;
