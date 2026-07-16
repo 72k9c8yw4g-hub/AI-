@@ -2,7 +2,7 @@
 // index.ts の handleApi から head === "os" のとき委譲される。認証済み userId を受け取る。
 
 import { anyKeyPresent, type LlmSecrets } from "./provider";
-import { runMentorTurn, runRecorderTurn } from "./org";
+import { runMentorTurn, runRecorderTurn, runMonitorTurn } from "./org";
 import {
   activeDecisionList,
   addMessage,
@@ -17,8 +17,10 @@ import {
   listDecisions,
   listMessages,
   listPendingCandidates,
+  listRoleModels,
   rejectCandidate,
   renameChat,
+  setRoleModel,
 } from "./db";
 
 function json(data: unknown, status = 200): Response {
@@ -73,7 +75,18 @@ export async function handleOsApi(
       const result = await runMentorTurn(history, rm, secrets);
       const mentorMsg = await addMessage(db, userId, id, "mentor", result.text);
 
-      return json({ user: userMsg, mentor: mentorMsg, stub: result.stub });
+      // 特命監視官: メンター応答後に横から監査。問題があれば警告を残す(独立監査・非中継)。
+      let monitorMsg = null;
+      const active = await activeDecisionList(db, userId);
+      const monRm = await getRoleModel(db, userId, "monitor");
+      const withMentor = await listMessages(db, userId, id);
+      const warnings = await runMonitorTurn(withMentor, active, monRm, secrets);
+      if (warnings.length) {
+        const text = warnings.map((w) => `[${w.type}] ${w.message}`).join("\n");
+        monitorMsg = await addMessage(db, userId, id, "monitor", text);
+      }
+
+      return json({ user: userMsg, mentor: mentorMsg, monitor: monitorMsg, stub: result.stub });
     }
 
     // POST /os/chats/<id>/propose … 記録官が会話から保存候補を生成(まだ保存しない)
@@ -132,6 +145,26 @@ export async function handleOsApi(
     const { active, archived } = await listDecisions(db, userId);
     const pending = await listPendingCandidates(db, userId);
     return json({ active, archived, pending });
+  }
+
+  // /os/roles … 役割別モデル設定(技術設計書 第4-5章)
+  if (head === "roles") {
+    if (method === "GET") {
+      return json({
+        roles: await listRoleModels(db, userId),
+        keys: {
+          anthropic: !!secrets.ANTHROPIC_API_KEY,
+          openai: !!secrets.OPENAI_API_KEY,
+          gemini: !!secrets.GEMINI_API_KEY,
+        },
+      });
+    }
+    if (method === "PUT") {
+      const b = (await req.json().catch(() => ({}))) as { role?: unknown; provider?: unknown; model?: unknown };
+      const ok = await setRoleModel(db, userId, String(b.role ?? ""), String(b.provider ?? ""), String(b.model ?? ""));
+      return ok ? json({ ok: true }) : json({ error: "role または provider が不正です" }, 400);
+    }
+    return notFound();
   }
 
   return notFound();

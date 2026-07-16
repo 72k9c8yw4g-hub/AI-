@@ -77,6 +77,18 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .drawer .df{padding:12px;border-top:1px solid var(--line)}
 .drawer .df a{color:var(--accent);text-decoration:none;font-size:13px}
 .empty2{color:var(--muted);text-align:center;padding:30px 12px;font-size:14px;line-height:1.7}
+/* 監視官の警告(独立監査ライン) */
+.mon{align-self:center;max-width:94%;background:var(--warn);color:#f0d9b5;border:1px solid #5a4523;border-radius:10px;padding:8px 12px;font-size:13px;white-space:pre-wrap;line-height:1.55}
+.mon .ml{display:block;font-weight:700;font-size:11px;margin-bottom:3px;color:#f0c98b}
+/* 役割別モデル設定 */
+.keys{font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.9;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.role{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--panel)}
+.role h4{margin:0 0 8px;font-size:14px}
+.role .r{display:flex;gap:8px}
+.role select{flex:0 0 42%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}
+.role input{flex:1;min-width:0;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}
+.role .save{margin-top:8px;background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;padding:6px 14px}
+.role .saved{color:#7ee0a1;font-size:12px;margin-left:8px}
 @media(min-width:820px){
  .drawer{position:static;transform:none;width:300px;flex:0 0 300px}
  .scrim{display:none}
@@ -91,6 +103,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
     <div class="title">🧭 AI意思決定OS</div>
     <div class="sub" id="subtitle">メンターと議論する</div>
   </div>
+  <button class="icon" id="settingsBtn" title="設定" style="font-size:18px">⚙️</button>
   <button class="icon" id="decisionsBtn" title="決定事項" style="font-size:18px">📌</button>
 </header>
 <div class="wrap">
@@ -120,6 +133,13 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
     <button class="tab" data-tab="archived">Archived</button>
   </div>
   <div class="panel-body" id="decBody"></div>
+</div>
+<div class="panel" id="setPanel">
+  <div class="panel-h"><b>⚙️ 役割別モデル設定</b><button id="setClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-body">
+    <div class="keys" id="keyStatus"></div>
+    <div id="roleList"></div>
+  </div>
 </div>
 <script>
 var TOKEN = location.pathname.split('/').filter(Boolean)[1] || '';
@@ -167,20 +187,25 @@ function loadChats(){
   });
 }
 
+function msgNode(m){
+  if(m.role==='monitor'){
+    var mon=document.createElement('div'); mon.className='mon';
+    mon.innerHTML='<span class="ml">🛡 特命監視官</span>'+esc(m.content);
+    return mon;
+  }
+  var who = m.role==='user' ? 'あなた' : (m.role==='mentor' ? 'メンター' : (m.name||m.role));
+  var row=document.createElement('div');
+  row.className='row '+(m.role==='user'?'user':'mentor');
+  row.innerHTML='<div class="who">'+esc(who)+'</div><div class="bubble">'+esc(m.content)+'</div>';
+  return row;
+}
 function renderMessages(msgs){
   var box=el('msgs'); box.innerHTML='';
   if(!msgs.length){
     box.innerHTML='<div class="empty"><div style="font-size:34px">🧭</div>共同創業者としてのメンターが、YESマンにならず率直に議論します。<br>まず相談したいことを送ってください。</div>';
     return;
   }
-  msgs.forEach(function(m){
-    if(m.role==='system')return;
-    var who = m.role==='user' ? 'あなた' : (m.role==='mentor' ? 'メンター' : (m.name||m.role));
-    var row=document.createElement('div');
-    row.className='row '+(m.role==='user'?'user':'mentor');
-    row.innerHTML='<div class="who">'+esc(who)+'</div><div class="bubble">'+esc(m.content)+'</div>';
-    box.appendChild(row);
-  });
+  msgs.forEach(function(m){ if(m.role==='system')return; box.appendChild(msgNode(m)); });
   box.scrollTop=box.scrollHeight;
 }
 
@@ -217,9 +242,9 @@ function doSend(text){
   appendTyping();
   api('/chats/'+current+'/send',{method:'POST',body:JSON.stringify({content:text})}).then(function(d){
     removeTyping();
-    var mrow=document.createElement('div'); mrow.className='row mentor';
-    mrow.innerHTML='<div class="who">メンター</div><div class="bubble">'+esc(d.mentor.content)+'</div>';
-    box.appendChild(mrow); box.scrollTop=box.scrollHeight;
+    box.appendChild(msgNode(d.mentor));
+    if(d.monitor) box.appendChild(msgNode(d.monitor));
+    box.scrollTop=box.scrollHeight;
     loadChats();
   }).catch(function(e){removeTyping();var er=document.createElement('div');er.className='typing';er.textContent='エラー: '+e.message;box.appendChild(er)})
     .then(function(){sending=false;el('sendBtn').disabled=false});
@@ -320,6 +345,39 @@ function renderDec(tab){
       (m.tags?'<div class="dm" style="margin-top:6px">#'+esc(m.tags).split(',').join(' #')+'</div>':'');
     body.appendChild(d);
   });
+}
+
+// ── 役割別モデル設定 ──
+var ROLE_JA={mentor:'メンター兼司令塔',monitor:'特命監視官',recorder:'記録官',worker:'作業AI群'};
+function openSettings(){el('setPanel').classList.add('open');loadRoles()}
+function closeSettings(){el('setPanel').classList.remove('open')}
+el('settingsBtn').onclick=openSettings;
+el('setClose').onclick=closeSettings;
+function loadRoles(){
+  el('roleList').innerHTML='<div class="empty2">読み込み中…</div>';
+  api('/roles').then(function(d){
+    var ks=d.keys||{};
+    el('keyStatus').innerHTML='APIキー接続状況'+
+      '<br>Anthropic: '+(ks.anthropic?'✅ 接続':'— 未接続')+
+      '<br>OpenAI: '+(ks.openai?'✅ 接続':'— 未接続')+
+      '<br>Gemini: '+(ks.gemini?'✅ 接続':'— 未接続')+
+      '<br><span style="opacity:.8">未接続のプロバイダを選んだ役割はスタブ応答になります。キーは wrangler secret で設定します。</span>';
+    var list=el('roleList'); list.innerHTML='';
+    d.roles.forEach(function(r){
+      var box=document.createElement('div'); box.className='role';
+      var opts=['anthropic','openai','gemini'].map(function(p){return '<option value="'+p+'"'+(p===r.provider?' selected':'')+'>'+p+'</option>'}).join('');
+      box.innerHTML='<h4>'+esc(ROLE_JA[r.role]||r.role)+'</h4>'+
+        '<div class="r"><select>'+opts+'</select><input value="'+esc(r.model)+'" placeholder="モデル名(空欄で既定)"></div>'+
+        '<button class="save">保存</button><span class="saved" style="display:none">保存しました</span>';
+      var sel=box.querySelector('select'), inp=box.querySelector('input'), sv=box.querySelector('.saved');
+      box.querySelector('.save').onclick=function(){
+        api('/roles',{method:'PUT',body:JSON.stringify({role:r.role,provider:sel.value,model:inp.value})}).then(function(){
+          sv.style.display='inline'; setTimeout(function(){sv.style.display='none'},1500);
+        }).catch(function(e){alert(e.message)});
+      };
+      list.appendChild(box);
+    });
+  }).catch(function(e){el('roleList').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
 }
 
 renderMessages([]); loadStatus(); loadChats();

@@ -54,9 +54,10 @@ export interface StoredMsg {
 
 // 保存済みメッセージ列 → LLM に渡す会話履歴 (user/assistant の2値に畳む)。
 // メンターの発言=assistant、それ以外(ユーザー・他役割)=user 扱いにし、他役割は名前を前置する。
+// 監視官(monitor)は独立監査ラインでデータフローを中継しないため、LLM文脈からは除外する。
 function toHistory(msgs: StoredMsg[]): ChatMsg[] {
   return msgs
-    .filter((m) => m.role !== "system")
+    .filter((m) => m.role !== "system" && m.role !== "monitor")
     .map((m) => {
       if (m.role === "mentor") return { role: "assistant", content: m.content } as ChatMsg;
       const label = m.role === "user" ? "" : `[${m.name || ROLE_LABELS[m.role] || m.role}] `;
@@ -107,7 +108,7 @@ function activeDecisionsText(active: ActiveDecision[]): string {
 
 function transcript(msgs: StoredMsg[]): string {
   return msgs
-    .filter((m) => m.role !== "system")
+    .filter((m) => m.role !== "system" && m.role !== "monitor")
     .map((m) => `${m.role === "user" ? "ユーザー" : ROLE_LABELS[m.role] || m.role}: ${m.content}`)
     .join("\n");
 }
@@ -163,3 +164,103 @@ export async function runRecorderTurn(
   const c = parseCandidate(res.text);
   return { save: !!c, candidate: c, stub: false };
 }
+
+// ── 特命監視官 ──────────────────────────────────────────
+// 運用第6章: 話題逸脱・無限ループ・矛盾・離脱傾向を監査し、問題があるときだけ警告する。
+// 決定も指示もしない(警告のみ)。過剰警告は禁止。通常は沈黙(空配列)。
+
+export type WarningType = "deviation" | "loop" | "contradiction" | "drift";
+export interface Warning {
+  type: WarningType;
+  message: string;
+}
+
+export const MONITOR_SYSTEM = `あなたは「AI意思決定OS」の特命監視官です。会話を横から監査し、問題があるときだけ警告します。決定も指示もしません(警告のみ)。
+警告タイプ:
+- deviation: 議題・目的から話が明らかに逸れている
+- loop: 同じ議論を繰り返している / 結論が出ず堂々巡りしている
+- contradiction: 現在有効な決定(Active)と矛盾する発言・結論がある
+- drift: プロジェクトの当初目的から徐々に離れる傾向がある
+必ず次のJSON配列だけを出力する(前後に説明文を付けない):
+[{"type":"contradiction","message":"簡潔な警告文。矛盾なら該当する決定に触れる"}]
+問題がなければ [] を返す。確度が高いものだけを、多くても2件まで。過剰に警告しない。`;
+
+const NEGATION = ["やめ", "中止", "変更", "じゃない", "ではない", "違う", "無し", "なし", "取りやめ", "撤回", "やっぱり"];
+
+function parseWarnings(text: string): Warning[] {
+  try {
+    const m = text.match(/\[[\s\S]*\]/);
+    if (!m) return [];
+    const arr = JSON.parse(m[0]) as unknown;
+    if (!Array.isArray(arr)) return [];
+    const valid: WarningType[] = ["deviation", "loop", "contradiction", "drift"];
+    return arr
+      .map((o) => {
+        const type = (o as { type?: unknown }).type;
+        const message = (o as { message?: unknown }).message;
+        return { type: type as WarningType, message: String(message ?? "").trim().slice(0, 300) };
+      })
+      .filter((w) => valid.includes(w.type) && w.message)
+      .slice(0, 2);
+  } catch {
+    return [];
+  }
+}
+
+// 内容語(カタカナ・漢字・英数)の2文字グラム集合。日本語は単語区切りが無いため、
+// 助詞などのひらがなを除いた文字bigramの重なりで「同じ話題か」を粗く判定する。
+function contentBigrams(s: string): Set<string> {
+  const cleaned = s.replace(/[^゠-ヿ一-鿿ｦ-ﾟa-zA-Z0-9]+/g, " ");
+  const grams = new Set<string>();
+  for (const w of cleaned.split(/\s+/)) {
+    if (w.length >= 2) for (let i = 0; i + 2 <= w.length; i++) grams.add(w.slice(i, i + 2));
+  }
+  return grams;
+}
+
+// キー未設定時の簡易監査(確定的なヒューリスティック)。あくまで動作確認用の割り切り。
+function stubWarnings(msgs: StoredMsg[], active: ActiveDecision[]): Warning[] {
+  const users = msgs.filter((m) => m.role === "user").map((m) => m.content.replace(/\s+/g, " ").trim());
+  if (!users.length) return [];
+  const last = users[users.length - 1];
+  const out: Warning[] = [];
+  // ループ: 直近の発言が過去の発言と同一
+  if (users.slice(0, -1).some((u) => u === last)) {
+    out.push({ type: "loop", message: "同じ内容の発言が繰り返されています。結論に進めましょう。" });
+  }
+  // 矛盾: 現行の決定と話題が重なりつつ否定語がある
+  if (NEGATION.some((n) => last.includes(n))) {
+    const lastGrams = contentBigrams(last);
+    for (const d of active) {
+      const tg = contentBigrams(d.title);
+      let shared = 0;
+      for (const g of tg) if (lastGrams.has(g)) shared++;
+      if (shared >= 1) {
+        out.push({ type: "contradiction", message: `現在有効な決定「${d.title}」と矛盾する可能性があります。変更するなら承認フローで更新してください。` });
+        break;
+      }
+    }
+  }
+  return out.slice(0, 2);
+}
+
+// 監視官の1監査。警告(0〜2件)を返す。問題なければ空配列(沈黙)。
+export async function runMonitorTurn(
+  msgs: StoredMsg[],
+  active: ActiveDecision[],
+  rm: RoleModel,
+  secrets: LlmSecrets
+): Promise<Warning[]> {
+  const system = `${MONITOR_SYSTEM}\n\n${activeDecisionsText(active)}`;
+  const input: ChatMsg[] = [{ role: "user", content: `次の会話を監査してください:\n\n${transcript(msgs)}` }];
+  const res = await callLLM(system, input, rm, secrets);
+  if (res.stub) return stubWarnings(msgs, active);
+  return parseWarnings(res.text);
+}
+
+export const WARNING_LABEL: Record<WarningType, string> = {
+  deviation: "話題逸脱",
+  loop: "ループ",
+  contradiction: "矛盾",
+  drift: "目的離脱",
+};

@@ -246,3 +246,16 @@ export async function activeDecisionList(db: D1Database, userId: number): Promis
   const all = await listMemories(db, userId, { kind: "decision", limit: 200, activeOnly: true });
   return all.map((m) => ({ id: m.id, title: m.title || m.content.slice(0, 40) }));
 }
+
+// ── 役割別モデル設定 ──────────────────────────────────────
+export const OS_ROLES = ["mentor", "monitor", "recorder", "worker"] as const;
+
+// 全役割の現在のモデル設定(未設定は既定)を返す。設定画面用。
+export async function listRoleModels(db: D1Database, userId: number): Promise<{ role: string; provider: Provider; model: string }[]> {
+  const out: { role: string; provider: Provider; model: string }[] = [];
+  for (const role of OS_ROLES) {
+    const rm = await getRoleModel(db, userId, role);
+    out.push({ role, provider: rm.provider, model: rm.model });
+  }
+  return out;
+}
