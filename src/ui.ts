@@ -193,6 +193,7 @@ function memLi(m){
   var kindLabel = {memory:"記憶",decision:"決定",note:"ノート"}[m.kind] || m.kind;
   var badges = '<span class="chip">'+esc(kindLabel)+'</span> ';
   if(m.source==="chat") badges += '<span class="chip" title="Claudeが会話から自動保存">🤖 自動</span> ';
+  else if(m.source && m.source!=="manual") badges += '<span class="chip" title="別のAIが保存">🤝 '+esc(m.source)+'</span> ';
   if(m.superseded_by_id) badges += '<span class="chip">旧版 → #'+m.superseded_by_id+'</span> ';
   else if(m.supersedes_id) badges += '<span class="chip done">更新版</span> ';
   return '<li'+(m.superseded_by_id?' class="oldmem"':'')+'><div class="grow">'

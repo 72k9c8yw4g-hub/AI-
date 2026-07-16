@@ -102,6 +102,13 @@ function normTags(tags: unknown): string {
   return "";
 }
 
+// 書き込み元AIの名前(マルチAI共有脳の帰属表示用)。"chat"=Claude(既定) / "manual"=手動 / それ以外=他のAI名
+export function normAgent(agent: unknown, fallback = "chat"): string {
+  if (typeof agent !== "string") return fallback;
+  const a = agent.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 20);
+  return a || fallback;
+}
+
 // ---------- 設定 (settings) ----------
 
 export async function getSetting(db: D1Database, key: string): Promise<string | null> {
@@ -239,6 +246,7 @@ export async function saveMemory(
     tags?: unknown;
     project?: unknown;
     source?: string;
+    agent?: unknown;
     supersedes?: unknown;
     reason?: unknown;
   }
@@ -275,7 +283,7 @@ export async function saveMemory(
       title,
       content.slice(0, 50000),
       normTags(args.tags),
-      args.source ?? "chat",
+      normAgent(args.agent ?? args.source, "chat"),
       projectId,
       old ? old.id : null,
       reason || null
@@ -638,19 +646,27 @@ export async function searchAll(
     }
     const { results: rows } = await db
       .prepare(
-        `SELECT m.id, m.kind, m.title, m.content, m.tags, p.name AS project, m.created_at, m.superseded_by_id
+        `SELECT m.id, m.kind, m.title, m.content, m.tags, m.source, p.name AS project, m.created_at, m.superseded_by_id
          FROM memories m LEFT JOIN projects p ON p.id = m.project_id
          WHERE m.user_id = ? AND ${termCond}${projCond} ORDER BY m.id DESC LIMIT ${limit}`
       )
       .bind(...binds)
-      .all<{ id: number; kind: string; title: string; content: string; tags: string; project: string | null; created_at: string; superseded_by_id: number | null }>();
+      .all<{ id: number; kind: string; title: string; content: string; tags: string; source: string; project: string | null; created_at: string; superseded_by_id: number | null }>();
     results.memories = rows.map((r) => ({
       type: "memory",
       id: r.id,
       title: r.title || r.content.slice(0, 40),
       snippet: makeSnippet(r.content, terms),
       date: r.created_at,
-      extra: [r.superseded_by_id ? `旧版→#${r.superseded_by_id}` : "", r.kind, r.project, r.tags].filter(Boolean).join(" / "),
+      extra: [
+        r.superseded_by_id ? `旧版→#${r.superseded_by_id}` : "",
+        r.kind,
+        r.project,
+        r.tags,
+        r.source !== "chat" && r.source !== "manual" ? `by:${r.source}` : "",
+      ]
+        .filter(Boolean)
+        .join(" / "),
     }));
   }
 
