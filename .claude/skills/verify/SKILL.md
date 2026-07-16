@@ -27,7 +27,7 @@ npx wrangler dev --port 8787     # バックグラウンド推奨。テーブル
 # ハンドシェイク
 curl -s -X POST http://localhost:8787/mcp/dev-token -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
-# ツール一覧 (8個: recall_context, search, save_memory, create_task, update_task, list_tasks, get_item, list_projects)
+# ツール一覧 (10個: recall_context, search, save_memory, delete_memory, create_task, update_task, list_tasks, get_item, list_projects, update_project)
 curl -s -X POST http://localhost:8787/mcp/dev-token -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 # ツール実行
@@ -71,6 +71,21 @@ GUI: ホームの「📁 プロジェクト」→ プロジェクト名タップ
 2. dev 停止 → `git stash pop` → **dev 再起動**(schemaReady はアイソレート単位のフラグのため必須)
 3. `npx wrangler d1 execute dscribe-db --local --command "PRAGMA table_info(memories)"` で新カラム確認
 4. 旧データが recall_context / get_item で無傷で読めること(新カラムは NULL = 現行扱い)
+
+## AI 管理ツールとエクスポートの駆動
+
+```bash
+# 概要の更新(UIは閲覧専用なのでこのツールが唯一の書き込み口)
+... tools/call update_project {"project":"起業プロジェクト","description":"目的とルール"}
+# 記憶の削除(current版を消すと旧版が現行に復帰する)
+... tools/call delete_memory {"id":2}
+# エクスポート: 全体 / カテゴリ別 / プロジェクト単位(チャットはメッセージ全文つき)
+curl -s ".../api/$TOK/export"                       # 全データ
+curl -s ".../api/$TOK/export?type=conversations"    # messages 配列が入っていること
+curl -s ".../api/$TOK/export?project=起業プロジェクト" # {project, memories, tasks, conversations}
+```
+GUI: 全タブで追加フォーム・チェックボックス・🗑 が無いこと(オーナー設定タブのメンバー管理は例外)。
+📤 エクスポートタブに 全体/カテゴリ4種/プロジェクト別 のダウンロードボタンが並ぶこと。
 
 ## 取り込みの駆動
 

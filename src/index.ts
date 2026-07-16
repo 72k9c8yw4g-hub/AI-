@@ -35,6 +35,7 @@ import {
   listConversations,
   deleteConversation,
   getConversationText,
+  exportConversations,
   getMemory,
   getTask,
   searchAll,
@@ -252,15 +253,34 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
     return notFound();
   }
 
-  // GET /export … 自分の全データダンプ
+  // GET /export … データのエクスポート(JSON)
+  //   省略時: 全データ / ?type=memories|tasks|conversations|projects: カテゴリ別 / ?project=名前: プロジェクト単位
   if (head === "export" && method === "GET") {
+    const type = url.searchParams.get("type");
+    const project = url.searchParams.get("project")?.trim() || undefined;
+    const base = { exported_at: new Date().toISOString(), account: user.email };
+    if (project) {
+      const projects = await listProjects(db, uid);
+      const p = projects.find((x) => x.name === project);
+      if (!p) return notFound();
+      const [tasks, memories, conversations] = await Promise.all([
+        listTasks(db, uid, { status: "all", project, limit: 2000 }),
+        listMemories(db, uid, { project, limit: 2000 }),
+        exportConversations(db, uid, project),
+      ]);
+      return json({ ...base, project: { name: p.name, description: p.description }, memories, tasks, conversations });
+    }
+    if (type === "memories") return json({ ...base, memories: await listMemories(db, uid, { limit: 2000 }) });
+    if (type === "tasks") return json({ ...base, tasks: await listTasks(db, uid, { status: "all", limit: 2000 }) });
+    if (type === "conversations") return json({ ...base, conversations: await exportConversations(db, uid) });
+    if (type === "projects") return json({ ...base, projects: await listProjects(db, uid) });
     const [tasks, memories, projects, conversations] = await Promise.all([
-      listTasks(db, uid, { status: "all", limit: 300 }),
-      listMemories(db, uid, { limit: 200 }),
+      listTasks(db, uid, { status: "all", limit: 2000 }),
+      listMemories(db, uid, { limit: 2000 }),
       listProjects(db, uid),
-      listConversations(db, uid, 500),
+      exportConversations(db, uid),
     ]);
-    return json({ exported_at: new Date().toISOString(), account: user.email, tasks, memories, projects, conversations });
+    return json({ ...base, projects, memories, tasks, conversations });
   }
 
   return notFound();

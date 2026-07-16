@@ -57,6 +57,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 a{color:var(--accent)}
 .empty{color:var(--sub);text-align:center;padding:16px}
 .oldmem{opacity:.55}
+a.btnlike{display:inline-block;background:var(--accent);color:#fff;border-radius:8px;padding:8px 14px;font-size:13px;text-decoration:none}
 </style>
 </head>
 <body>
@@ -68,7 +69,7 @@ a{color:var(--accent)}
 "use strict";
 var TOKEN = location.pathname.split("/")[2] || "";
 var API = "/api/" + TOKEN;
-var TABS = [["home","🏠 ホーム"],["tasks","✅ タスク"],["memories","💭 記憶"],["chats","💬 チャット履歴"],["search","🔍 検索"],["import","📥 取り込み"],["setup","⚙️ 設定"]];
+var TABS = [["home","🏠 ホーム"],["tasks","✅ タスク"],["memories","💭 記憶"],["chats","💬 チャット履歴"],["search","🔍 検索"],["import","📥 取り込み"],["export","📤 エクスポート"],["setup","⚙️ 設定"]];
 var current = "home";
 
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
@@ -102,7 +103,7 @@ function viewHome(){
       + '</div>';
     html += '<div class="card"><h2>✅ 未完了タスク</h2>' + (d.tasks.length ? '<ul class="plain">' + d.tasks.map(taskLi).join("") + '</ul>' : '<div class="empty">未完了タスクはありません</div>') + '</div>';
     html += '<div class="card"><h2>📁 プロジェクト</h2>' + (d.projects.length ? '<ul class="plain">' + d.projects.map(projLi).join("") + '</ul>' : '<div class="empty">まだありません。記憶やタスクにプロジェクト名を付けると自動で作られます</div>') + '</div>';
-    html += '<div class="card"><h2>💭 最近の記憶</h2>' + (d.memories.length ? '<ul class="plain">' + d.memories.map(memLi).join("") + '</ul>' : '<div class="empty">まだ記憶がありません。Claudeとの会話で自動保存されるほか、このページからも追加できます</div>') + '</div>';
+    html += '<div class="card"><h2>💭 最近の記憶</h2>' + (d.memories.length ? '<ul class="plain">' + d.memories.map(memLi).join("") + '</ul>' : '<div class="empty">まだ記憶がありません。Claudeとの会話で自動保存されます</div>') + '</div>';
     main(html);
   }).catch(showErr);
 }
@@ -117,8 +118,8 @@ function viewProject(name){
   api("/overview?project=" + encodeURIComponent(name)).then(function(d){
     var html = '<div style="margin:10px 0"><button class="ghost" onclick="go(\\'home\\')">← ホーム</button></div>';
     html += '<div class="card"><h2>📁 '+esc(name)+'</h2>'
-      + '<textarea id="pBrief" placeholder="プロジェクトの概要・目的・ルールなど(ここに書くと Claude が recall_context で読み込みます)">'+esc(d.brief||"")+'</textarea>'
-      + (d.projectId ? '<div class="row"><button class="primary" onclick="saveBrief('+d.projectId+',\\''+encodeURIComponent(name)+'\\')">概要を保存</button></div>' : '')
+      + (d.brief ? '<div style="white-space:pre-wrap">'+esc(d.brief)+'</div>' : '<div class="empty">概要はまだありません</div>')
+      + '<p class="meta">概要は Claude が管理します。会話で「'+esc(name)+' の概要を◯◯に更新して」と頼むと書き換わります。</p>'
       + '</div>';
     html += '<div class="card"><h2>📌 現行の決定事項</h2>' + (d.decisions&&d.decisions.length ? '<ul class="plain">'+d.decisions.map(memLi).join("")+'</ul>' : '<div class="empty">まだありません(決定が変わった場合、旧版は自動で履歴になります)</div>') + '</div>';
     html += '<div class="card"><h2>✅ 未完了タスク</h2>' + (d.tasks.length ? '<ul class="plain">'+d.tasks.map(taskLi).join("")+'</ul>' : '<div class="empty">未完了タスクはありません</div>') + '</div>';
@@ -132,52 +133,59 @@ function viewProject(name){
     main(html);
   }).catch(showErr);
 }
-function saveBrief(id, encName){
-  api("/projects/"+id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({description: el("pBrief").value})})
-    .then(function(){ alert("保存しました"); viewProject(decodeURIComponent(encName)); }).catch(alertErr);
+// ---------- エクスポート ----------
+function expBtn(label, query, fname){
+  return '<a class="btnlike" href="'+API+'/export'+query+'" download="'+fname+'">'+label+'</a>';
+}
+function viewExport(){
+  api("/projects").then(function(d){
+    var html = '<div class="card"><h2>📤 データのエクスポート</h2>'
+      + '<p>「第二の脳」の中身を JSON でダウンロードできます(バックアップ・引っ越し用)。チャット履歴はメッセージ全文つきです。</p>'
+      + '<h2 style="margin-top:14px">全体</h2>'
+      + '<div class="row">'+expBtn("🧠 全データ","","dscribe-all.json")+'</div>'
+      + '<h2 style="margin-top:14px">カテゴリ別</h2>'
+      + '<div class="row">'
+      + expBtn("💭 記憶","?type=memories","dscribe-memories.json")
+      + expBtn("✅ タスク","?type=tasks","dscribe-tasks.json")
+      + expBtn("💬 チャット履歴","?type=conversations","dscribe-conversations.json")
+      + expBtn("📁 プロジェクト一覧","?type=projects","dscribe-projects.json")
+      + '</div>'
+      + '<h2 style="margin-top:14px">プロジェクト単位(記憶+タスク+チャット)</h2>'
+      + (d.projects.length
+        ? '<div class="row">'+d.projects.map(function(p){
+            return expBtn("📁 "+esc(p.name),"?project="+encodeURIComponent(p.name),"dscribe-"+encodeURIComponent(p.name)+".json");
+          }).join("")+'</div>'
+        : '<div class="empty">プロジェクトはまだありません</div>')
+      + '</div>';
+    main(html);
+  }).catch(showErr);
 }
 
-// ---------- タスク ----------
+// ---------- タスク (閲覧専用: 編集は Claude との会話で) ----------
 function taskLi(t){
+  var mark = t.status==="done" ? "✅" : t.status==="doing" ? "🔄" : "⬜";
   var chips = "";
   if(t.priority==="high") chips += ' <span class="chip high">高</span>';
   if(t.status==="done") chips += ' <span class="chip done">完了</span>';
   else if(t.status==="doing") chips += ' <span class="chip">進行中</span>';
   if(t.due_date) chips += ' <span class="chip">期限 '+esc(t.due_date)+'</span>';
   if(t.project) chips += ' <span class="chip">'+esc(t.project)+'</span>';
-  return '<li><input type="checkbox" '+(t.status==="done"?"checked":"")+' onchange="toggleTask('+t.id+',this.checked)">'
+  return '<li><span>'+mark+'</span>'
     + '<div class="grow"><div>'+(t.status==="done"?"<s>":"")+esc(t.title)+(t.status==="done"?"</s>":"")+chips+'</div>'
     + (t.description?'<div class="snippet">'+esc(t.description.slice(0,150))+'</div>':"")
-    + '</div><button class="ghost" onclick="delTask('+t.id+')">🗑</button></li>';
+    + '</div></li>';
 }
 function viewTasks(){
   var f = (window.__taskFilter = window.__taskFilter || "active");
   api("/tasks?status=" + f).then(function(d){
-    var html = '<div class="card"><h2>タスクを追加</h2>'
-      + '<div class="row"><input type="text" id="tTitle" placeholder="タスク名"><input type="date" id="tDue">'
-      + '<select id="tPri"><option value="normal">普通</option><option value="high">高</option><option value="low">低</option></select>'
-      + '<input type="text" id="tProj" placeholder="プロジェクト(任意)" style="max-width:150px">'
-      + '<button class="primary" onclick="addTask()">追加</button></div></div>';
-    html += '<div class="card"><h2>タスク一覧 '
+    var html = '<div class="card"><h2>タスク一覧 '
       + '<select onchange="window.__taskFilter=this.value;viewTasks()">'
       + ["active","open","doing","done","all"].map(function(s){ return '<option value="'+s+'" '+(f===s?"selected":"")+'>'+({active:"未完了",open:"未着手",doing:"進行中",done:"完了",all:"すべて"})[s]+'</option>'; }).join("")
       + '</select></h2>'
-      + (d.tasks.length ? '<ul class="plain">' + d.tasks.map(taskLi).join("") + '</ul>' : '<div class="empty">タスクはありません</div>') + '</div>';
+      + (d.tasks.length ? '<ul class="plain">' + d.tasks.map(taskLi).join("") + '</ul>' : '<div class="empty">タスクはありません</div>')
+      + '<p class="meta">'+READONLY_NOTE+'</p></div>';
     main(html);
   }).catch(showErr);
-}
-function addTask(){
-  var title = el("tTitle").value.trim(); if(!title) return;
-  api("/tasks", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({title:title, due_date:el("tDue").value, priority:el("tPri").value, project:el("tProj").value})})
-    .then(viewTasks).catch(alertErr);
-}
-function toggleTask(id, done){
-  api("/tasks/"+id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({status: done?"done":"open"})})
-    .then(function(){ if(current==="tasks") viewTasks(); else viewHome(); }).catch(alertErr);
-}
-function delTask(id){
-  if(!confirm("このタスクを削除しますか?")) return;
-  api("/tasks/"+id, {method:"DELETE"}).then(viewTasks).catch(alertErr);
 }
 
 // ---------- 記憶 ----------
@@ -191,31 +199,18 @@ function memLi(m){
     + '<div>'+badges+(m.project?'<span class="chip">'+esc(m.project)+'</span> ':"")
     + (m.title?'<b>'+esc(m.title)+'</b> — ':"") + esc(m.content.slice(0,200)) + '</div>'
     + '<div class="meta">'+esc((m.created_at||"").slice(0,16))+(m.tags?' / '+esc(m.tags):"")+' <a href="javascript:void(0)" onclick="openItem(\\'memory\\','+m.id+')">全文</a></div>'
-    + '</div><button class="ghost" onclick="delMem('+m.id+')">🗑</button></li>';
+    + '</div></li>';
 }
 function viewMemories(){
   api("/memories?limit=100").then(function(d){
-    var html = '<div class="card"><h2>記憶を追加</h2>'
-      + '<textarea id="mContent" placeholder="覚えておきたいこと(Claudeとの会話中は自動保存されます)"></textarea>'
-      + '<div class="row"><select id="mKind"><option value="memory">記憶</option><option value="decision">決定事項</option><option value="note">ノート</option></select>'
-      + '<input type="text" id="mTitle" placeholder="タイトル(任意)"><input type="text" id="mProj" placeholder="プロジェクト(任意)" style="max-width:150px">'
-      + '<button class="primary" onclick="addMem()">保存</button></div></div>';
-    html += '<div class="card"><h2>保存済みの記憶(最新100件)</h2>'
-      + (d.memories.length ? '<ul class="plain">' + d.memories.map(memLi).join("") + '</ul>' : '<div class="empty">まだありません</div>') + '</div>';
+    var html = '<div class="card"><h2>保存済みの記憶(最新100件)</h2>'
+      + (d.memories.length ? '<ul class="plain">' + d.memories.map(memLi).join("") + '</ul>' : '<div class="empty">まだありません。Claudeとの会話で自動保存されます</div>')
+      + '<p class="meta">'+READONLY_NOTE+' 例:「memory#12 消して」「◯◯の件、△△に変更して覚えて」</p></div>';
     main(html);
   }).catch(showErr);
 }
-function addMem(){
-  var content = el("mContent").value.trim(); if(!content) return;
-  api("/memories", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({content:content, kind:el("mKind").value, title:el("mTitle").value, project:el("mProj").value, source:"manual"})})
-    .then(viewMemories).catch(alertErr);
-}
-function delMem(id){
-  if(!confirm("この記憶を削除しますか?")) return;
-  api("/memories/"+id, {method:"DELETE"}).then(viewMemories).catch(alertErr);
-}
 
-// ---------- チャット履歴 ----------
+// ---------- チャット履歴 (閲覧専用) ----------
 function viewChats(){
   api("/conversations").then(function(d){
     var html = '<div class="card"><h2>取込済みチャット ('+d.conversations.length+'件)</h2>';
@@ -223,8 +218,7 @@ function viewChats(){
       html += '<ul class="plain">' + d.conversations.map(function(c){
         return '<li><div class="grow"><a href="javascript:void(0)" onclick="openItem(\\'chat\\','+c.id+')">'+esc(c.name||"(無題)")+'</a>'
           + (c.project_name?' <span class="chip">'+esc(c.project_name)+'</span>':"")
-          + '<div class="meta">'+c.message_count+'メッセージ / '+esc((c.updated_at||"").slice(0,16))+'</div></div>'
-          + '<button class="ghost" onclick="delConv('+c.id+')">🗑</button></li>';
+          + '<div class="meta">'+c.message_count+'メッセージ / '+esc((c.updated_at||"").slice(0,16))+'</div></div></li>';
       }).join("") + '</ul>';
     } else {
       html += '<div class="empty">まだチャット履歴がありません。「📥 取り込み」タブから claude.ai のエクスポートを取り込むと、過去の全チャットを Claude が検索できるようになります。</div>';
@@ -232,10 +226,6 @@ function viewChats(){
     html += '</div>';
     main(html);
   }).catch(showErr);
-}
-function delConv(id){
-  if(!confirm("このチャット履歴を削除しますか?")) return;
-  api("/conversations/"+id, {method:"DELETE"}).then(viewChats).catch(alertErr);
 }
 
 // ---------- 検索 ----------
@@ -347,6 +337,8 @@ function viewSetup(){
     + "- 決定を変更する話(「やっぱりBにする」「〜は中止」)が出たら: search で旧決定のIDを探し、\\n"
     + "  save_memory を kind=decision, supersedes=旧ID, reason=変更理由 で保存する(旧決定は自動で履歴になる)。\\n"
     + "- タスク完了の話が出たら update_task で status=done にする。\\n"
+    + "- ダッシュボードは閲覧専用。削除は「これ消して」→ delete_memory、プロジェクト概要は\\n"
+    + "  「◯◯の概要を更新して」→ update_project。編集はすべて会話経由で AI が行う。\\n"
     + "- 会話が終わりそうなときは要点を save_memory で保存する(次の会話への引き継ぎ)。\\n"
     + "- 保存したら「📝 記憶しました」と一言だけ添える。";
   var htmlStr = '<div class="card"><h2>🔌 Claude コネクタ設定</h2>'
@@ -412,7 +404,8 @@ function copyText(id){
 function showErr(e){ main('<div class="card err">エラー: '+esc(e.message)+'<br><span class="meta">URLのトークンが正しいか確認してください</span></div>'); }
 function alertErr(e){ alert("エラー: " + e.message); }
 
-var VIEWS = {home:viewHome, tasks:viewTasks, memories:viewMemories, chats:viewChats, search:viewSearch, import:viewImport, setup:viewSetup};
+var VIEWS = {home:viewHome, tasks:viewTasks, memories:viewMemories, chats:viewChats, search:viewSearch, import:viewImport, export:viewExport, setup:viewSetup};
+var READONLY_NOTE = "このダッシュボードは閲覧専用です。追加・変更・削除は Claude との会話で頼んでください(第二の脳の管理者は AI)。";
 var ME = null;
 renderNav();
 api("/me").then(function(me){
