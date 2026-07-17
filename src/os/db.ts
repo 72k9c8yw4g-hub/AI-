@@ -2,7 +2,18 @@
 // すべて user_id スコープ。既存 Dscribe の分離方針(ユーザーごとに完全独立)を踏襲する。
 
 import { resolveModel, type LlmSecrets, type Provider, type RoleModel } from "./provider";
-import { saveMemory, listMemories, getMemory, getMemoryChain, likeEscape, splitTerms, type MemoryRow } from "../db";
+import {
+  saveMemory,
+  listMemories,
+  getMemory,
+  getMemoryChain,
+  likeEscape,
+  splitTerms,
+  getSetting,
+  setSetting,
+  genToken,
+  type MemoryRow,
+} from "../db";
 
 export interface OsChat {
   id: number;
@@ -84,6 +95,9 @@ export async function listMessages(db: D1Database, userId: number, chatId: numbe
   return results;
 }
 
+// 1メッセージの最大長。DB肥大とLLMコスト暴走の入口を塞ぐ(タイトルは別途120字)
+const MAX_MESSAGE_CHARS = 8000;
+
 // メッセージ追加。seq はチャット内連番。チャットの updated_at も進める。
 export async function addMessage(
   db: D1Database,
@@ -93,6 +107,7 @@ export async function addMessage(
   content: string,
   name = ""
 ): Promise<OsMessage> {
+  content = content.slice(0, MAX_MESSAGE_CHARS);
   const seqRow = await db
     .prepare(`SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM os_messages WHERE chat_id = ?`)
     .bind(chatId)
@@ -195,6 +210,7 @@ export async function listPendingCandidates(db: D1Database, userId: number, chat
 }
 
 // 承認 = 明示的承認。決定事項(memories kind=decision)として保存する。無承認では決して保存しない。
+// 二重承認レース対策: 先に status='pending' 条件つき UPDATE で「承認権」を原子的に取る。
 export async function approveCandidate(
   db: D1Database,
   userId: number,
@@ -202,7 +218,14 @@ export async function approveCandidate(
 ): Promise<{ ok: boolean; memory?: MemoryRow; error?: string }> {
   const c = await getCandidate(db, userId, id);
   if (!c) return { ok: false, error: "保存候補が見つかりません" };
-  if (c.status !== "pending") return { ok: false, error: `この候補は既に処理済みです (${c.status})` };
+  const claim = await db
+    .prepare(
+      `UPDATE os_candidates SET status = 'approved', decided_at = datetime('now')
+        WHERE id = ? AND user_id = ? AND status = 'pending'`
+    )
+    .bind(id, userId)
+    .run();
+  if ((claim.meta.changes ?? 0) === 0) return { ok: false, error: `この候補は既に処理済みです (${c.status})` };
   let memory: MemoryRow;
   try {
     memory = await saveMemory(db, userId, {
@@ -215,12 +238,14 @@ export async function approveCandidate(
       supersedes: c.supersedes_id ?? undefined,
     });
   } catch (e) {
+    // 保存に失敗したら承認権を返上して pending に戻す(再承認できるように)
+    await db
+      .prepare(`UPDATE os_candidates SET status = 'pending', decided_at = NULL WHERE id = ? AND user_id = ?`)
+      .bind(id, userId)
+      .run();
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
-  await db
-    .prepare(`UPDATE os_candidates SET status = 'approved', memory_id = ?, decided_at = datetime('now') WHERE id = ? AND user_id = ?`)
-    .bind(memory.id, id, userId)
-    .run();
+  await db.prepare(`UPDATE os_candidates SET memory_id = ? WHERE id = ? AND user_id = ?`).bind(memory.id, id, userId).run();
   return { ok: true, memory };
 }
 
@@ -380,6 +405,25 @@ export async function searchOs(db: D1Database, userId: number, query: unknown): 
   return { terms, results };
 }
 
+// ── エクスポート(バックアップ) ─────────────────────────────
+// 📤の全体エクスポートに OS のデータも含める。os_api_keys(秘密情報)は絶対に含めない。
+export async function exportOs(db: D1Database, userId: number) {
+  const q = async <T>(sql: string) => (await db.prepare(sql).bind(userId).all<T>()).results;
+  return {
+    chats: await q(`SELECT id, title, project_id, created_at, updated_at FROM os_chats WHERE user_id = ? ORDER BY id`),
+    messages: await q(
+      `SELECT chat_id, role, name, content, seq, created_at FROM os_messages WHERE user_id = ? ORDER BY chat_id, seq, id`
+    ),
+    candidates: await q(
+      `SELECT id, chat_id, kind, title, content, tags, project, summary, supersedes_id, status, memory_id, created_at, decided_at
+         FROM os_candidates WHERE user_id = ? ORDER BY id`
+    ),
+    worker_runs: await q(`SELECT id, chat_id, task, status, summary, created_at, done_at FROM os_worker_runs WHERE user_id = ? ORDER BY id`),
+    worker_msgs: await q(`SELECT run_id, role, name, content, seq, created_at FROM os_worker_msgs WHERE user_id = ? ORDER BY run_id, seq, id`),
+    role_config: await q(`SELECT role, provider, model, updated_at FROM os_role_config WHERE user_id = ?`),
+  };
+}
+
 // ── 役割別モデル設定 ──────────────────────────────────────
 export const OS_ROLES = ["mentor", "monitor", "recorder", "worker"] as const;
 
@@ -391,6 +435,47 @@ export async function listRoleModels(db: D1Database, userId: number): Promise<{ 
     out.push({ role, provider: rm.provider, model: rm.model });
   }
   return out;
+}
+
+// ── APIキーの暗号化 (AES-GCM) ─────────────────────────────
+// os_api_keys.key は平文で置かず封筒暗号化する。KEK(暗号鍵の素)は初回に自動生成して
+// settings に保存する。KEK が同じDBにある以上「DB丸ごと流出」には効かないが、
+// 部分的な流出(エクスポートの誤共有・画面共有中のテーブル閲覧など)からは守れる。
+const ENC_PREFIX = "enc:v1:";
+
+async function kekKey(db: D1Database): Promise<CryptoKey> {
+  let material = await getSetting(db, "os_kek");
+  if (!material) {
+    material = genToken(); // 48桁hex
+    await setSetting(db, "os_kek", material);
+  }
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
+  return crypto.subtle.importKey("raw", digest, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+function b64enc(buf: ArrayBuffer | Uint8Array): string {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s);
+}
+function b64dec(s: string): Uint8Array {
+  return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+}
+
+async function encryptApiKey(db: D1Database, plain: string): Promise<string> {
+  const key = await kekKey(db);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plain));
+  return `${ENC_PREFIX}${b64enc(iv)}:${b64enc(ct)}`;
+}
+
+async function decryptApiKey(db: D1Database, stored: string): Promise<string> {
+  if (!stored.startsWith(ENC_PREFIX)) return stored; // 旧形式(平文)はそのまま読める
+  const [ivB64, ctB64] = stored.slice(ENC_PREFIX.length).split(":");
+  const key = await kekKey(db);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64dec(ivB64) as unknown as BufferSource }, key, b64dec(ctB64) as unknown as BufferSource);
+  return new TextDecoder().decode(pt);
 }
 
 // ── APIキー (os_api_keys) ─────────────────────────────────
@@ -414,7 +499,21 @@ async function getUserApiKeys(db: D1Database, userId: number): Promise<Partial<R
     .all<{ provider: string; key: string }>();
   const out: Partial<Record<Provider, string>> = {};
   for (const r of results) {
-    if (VALID_PROVIDERS.has(r.provider as Provider) && r.key) out[r.provider as Provider] = r.key;
+    if (!VALID_PROVIDERS.has(r.provider as Provider) || !r.key) continue;
+    try {
+      const plain = await decryptApiKey(db, r.key);
+      out[r.provider as Provider] = plain;
+      // 旧形式(平文)の行は読んだついでに暗号化形式へ自動アップグレード
+      if (!r.key.startsWith(ENC_PREFIX)) {
+        const enc = await encryptApiKey(db, plain);
+        await db
+          .prepare(`UPDATE os_api_keys SET key = ? WHERE user_id = ? AND provider = ?`)
+          .bind(enc, userId, r.provider)
+          .run();
+      }
+    } catch {
+      // 復号失敗(KEK消失など)。キーは使えないが、他の処理は止めない
+    }
   }
   return out;
 }
@@ -447,14 +546,33 @@ export async function setUserApiKey(db: D1Database, userId: number, provider: st
   const k = (typeof key === "string" ? key : "").trim();
   // ゴミ入力(空・改行入り・短すぎ・長すぎ)は拒否
   if (!k || /\s/.test(k) || k.length < 10 || k.length > 300) return false;
+  const enc = await encryptApiKey(db, k);
   await db
     .prepare(
       `INSERT INTO os_api_keys (user_id, provider, key) VALUES (?, ?, ?)
        ON CONFLICT(user_id, provider) DO UPDATE SET key = excluded.key, updated_at = datetime('now')`
     )
-    .bind(userId, provider, k)
+    .bind(userId, provider, enc)
     .run();
   return true;
+}
+
+// ── LLM 呼び出しの1日上限(コスト暴走・トークン漏洩時の焼き尽くし対策) ──
+export const DAILY_LLM_LIMIT = 500;
+
+// n 回ぶんの予算を原子的に消費する。上限を超える場合は消費せずエラー。
+export async function consumeLlmBudget(db: D1Database, userId: number, n: number): Promise<void> {
+  const day = new Date().toISOString().slice(0, 10);
+  await db
+    .prepare(`INSERT INTO os_llm_usage (user_id, day, calls) VALUES (?, ?, 0) ON CONFLICT(user_id, day) DO NOTHING`)
+    .bind(userId, day)
+    .run();
+  const r = await db
+    .prepare(`UPDATE os_llm_usage SET calls = calls + ? WHERE user_id = ? AND day = ? AND calls + ? <= ?`)
+    .bind(n, userId, day, n, DAILY_LLM_LIMIT)
+    .run();
+  if ((r.meta.changes ?? 0) === 0)
+    throw new Error(`本日のAI呼び出し上限(${DAILY_LLM_LIMIT}回/日)に達しました。明日リセットされます`);
 }
 
 export async function deleteUserApiKey(db: D1Database, userId: number, provider: string): Promise<boolean> {
