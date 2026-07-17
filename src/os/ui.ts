@@ -493,10 +493,23 @@ function keyRow(p, info){
   };
   return box;
 }
+// 接続済みプロバイダの「実際に使えるモデル一覧」を取得して datalist に入れる(名前当て不要に)
+function loadModelLists(ki){
+  ['anthropic','openai','gemini'].forEach(function(p){
+    var dl=el('dl-'+p);
+    if(!dl){dl=document.createElement('datalist');dl.id='dl-'+p;el('setPanel').appendChild(dl)}
+    if(!ki[p]||!ki[p].set)return;
+    api('/models?provider='+p).then(function(d){
+      if(!d.models||!d.models.length)return;
+      dl.innerHTML=d.models.map(function(m){return '<option value="'+esc(m)+'">'}).join('');
+    }).catch(function(){});
+  });
+}
 function loadRoles(){
   el('roleList').innerHTML='<div class="empty2">読み込み中…</div>';
   api('/roles').then(function(d){
     var ki=d.keyInfo||{};
+    loadModelLists(ki);
     var ksBox=el('keyStatus'); ksBox.innerHTML='APIキー接続状況 — キーはあなた専用の保管庫(D1)に保存され、このURLを知る本人だけが使えます。<br><span style="opacity:.8">Gemini は <b>aistudio.google.com</b> →「Get API key」で無料発行できます(AIzaSy… で始まる文字列)。プロジェクトID(gen-lang-client-…)ではありません。</span>';
     ['gemini','anthropic','openai'].forEach(function(p){ if(ki[p]) ksBox.appendChild(keyRow(p, ki[p])); });
     var list=el('roleList'); list.innerHTML='';
@@ -504,11 +517,11 @@ function loadRoles(){
       var box=document.createElement('div'); box.className='role';
       var opts=['anthropic','openai','gemini'].map(function(p){return '<option value="'+p+'"'+(p===r.provider?' selected':'')+'>'+p+'</option>'}).join('');
       box.innerHTML='<h4>'+esc(ROLE_JA[r.role]||r.role)+'</h4>'+
-        '<div class="r"><select>'+opts+'</select><input value="'+esc(r.model)+'" placeholder="モデル名(空欄で既定)"></div>'+
+        '<div class="r"><select>'+opts+'</select><input list="dl-'+esc(r.provider)+'" value="'+esc(r.model)+'" placeholder="モデル名(候補から選択可)"></div>'+
         '<button class="save">保存</button><span class="saved" style="display:none">保存しました</span>';
       var sel=box.querySelector('select'), inp=box.querySelector('input'), sv=box.querySelector('.saved');
-      // プロバイダを切り替えたらモデル名もそのプロバイダの既定に置き換える(旧モデル名の残骸を防ぐ)
-      sel.onchange=function(){inp.value=DEFAULT_MODELS[sel.value]||''};
+      // プロバイダを切り替えたらモデル名も既定に置き換え、候補リストも切り替える
+      sel.onchange=function(){inp.value=DEFAULT_MODELS[sel.value]||'';inp.setAttribute('list','dl-'+sel.value)};
       box.querySelector('.save').onclick=function(){
         api('/roles',{method:'PUT',body:JSON.stringify({role:r.role,provider:sel.value,model:inp.value})}).then(function(){
           sv.style.display='inline'; setTimeout(function(){sv.style.display='none'},1500);

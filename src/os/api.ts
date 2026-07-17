@@ -1,7 +1,7 @@
 // AI意思決定OS — REST ハンドラ (/api/<token>/os/...)。
 // index.ts の handleApi から head === "os" のとき委譲される。認証済み userId を受け取る。
 
-import { anyKeyPresent, type LlmSecrets } from "./provider";
+import { anyKeyPresent, listProviderModels, type LlmSecrets, type Provider } from "./provider";
 import { runMentorTurn, runRecorderTurn, runMonitorTurn, runWorkerTask, runMentorConsolidation } from "./org";
 import {
   activeDecisionList,
@@ -44,7 +44,7 @@ export async function handleOsApi(
   userId: number,
   envSecrets: LlmSecrets,
   rest: string[],
-  _url: URL
+  url: URL
 ): Promise<Response> {
   const method = req.method;
   const head = rest[0] ?? "";
@@ -219,6 +219,20 @@ export async function handleOsApi(
       return json({ run, log: await getWorkerLog(db, userId, rid) });
     }
     return notFound();
+  }
+
+  // GET /os/models?provider=gemini … そのキーで実際に使えるモデル一覧(⚙️の候補表示用)
+  if (head === "models" && method === "GET") {
+    const p = url.searchParams.get("provider") ?? "";
+    if (!["anthropic", "openai", "gemini"].includes(p)) return json({ error: "provider が不正です" }, 400);
+    const key =
+      p === "anthropic" ? secrets.ANTHROPIC_API_KEY : p === "openai" ? secrets.OPENAI_API_KEY : secrets.GEMINI_API_KEY;
+    if (!key) return json({ models: [], error: "キー未接続" });
+    try {
+      return json({ models: await listProviderModels(p as Provider, key) });
+    } catch (e) {
+      return json({ models: [], error: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   // /os/roles … 役割別モデル設定(技術設計書 第4-5章)
