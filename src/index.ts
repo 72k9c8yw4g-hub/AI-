@@ -59,6 +59,9 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  // 自動バックアップの保存先(R2)。wrangler.toml の [[r2_buckets]] を有効化すると使える。
+  // 未設定でも動く(バックアップが「未設定」ステータスになるだけ)。
+  BACKUP?: R2Bucket;
 }
 
 // 有効な招待コード(環境変数 > DB設定)
@@ -308,7 +311,7 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
 
   // /os/… … AI意思決定OS (チャット + メンター)
   if (head === "os") {
-    return handleOsApi(req, db, uid, env, rest.slice(1), url);
+    return handleOsApi(req, db, uid, env, rest.slice(1), url, !!user.is_owner);
   }
 
   return notFound();
@@ -415,5 +418,13 @@ export default {
     }
 
     return notFound();
+  },
+
+  // 週1回の自動バックアップ(wrangler.toml の [triggers] crons)。R2未設定でも安全に完了する。
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    await ensureSchema(env.DB);
+    await ensureOsSchema(env.DB);
+    const { runBackup } = await import("./os/backup");
+    await runBackup(env.DB, env.BACKUP);
   },
 } satisfies ExportedHandler<Env>;
