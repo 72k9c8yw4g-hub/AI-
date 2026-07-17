@@ -105,10 +105,34 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .wmsg{border-top:1px solid var(--line);padding:8px 0}
 .wmsg .wn{font-size:11px;color:var(--accent);font-weight:700;margin-bottom:3px}
 .wmsg .wc{white-space:pre-wrap;font-size:13px;line-height:1.55}
+/* ナビゲーション(スマホ=下タブ / PC=左レール) */
+#osnav{position:fixed;z-index:40;display:flex;background:var(--panel);border-top:1px solid var(--line)}
+#osnav button{flex:1;background:none;border:none;border-radius:0;color:var(--muted);font-size:20px;padding:7px 0 4px;display:flex;flex-direction:column;align-items:center;gap:1px}
+#osnav button span{font-size:10px}
+#osnav button.active{color:var(--accent)}
+body{padding-bottom:56px}
+#osnav{left:0;right:0;bottom:0;height:56px;padding-bottom:env(safe-area-inset-bottom)}
+.panel{bottom:56px}
+/* ホーム画面(実装準備設計書 第4章) */
+.home-sec{margin-bottom:16px}
+.home-sec h3{font-size:13px;color:var(--muted);margin:0 0 8px;font-weight:700}
+.hcard{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:12px}
+.hrow{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-bottom:8px;gap:8px}
+.hrow .ht{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hrow .hm{color:var(--muted);font-size:12px;white-space:nowrap}
+.stat{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.stat:last-child{border-bottom:none}
+.stat .sm{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
+.badge.run{background:#12331d;color:#7ee0a1}
+.badge.stub{background:#3a2a12;color:#f0c98b}
 @media(min-width:820px){
  .drawer{position:static;transform:none;width:300px;flex:0 0 300px}
  .scrim{display:none}
  header .menu{display:none}
+ body{padding-bottom:0;padding-left:64px}
+ #osnav{left:0;top:0;bottom:0;right:auto;width:64px;height:auto;flex-direction:column;justify-content:flex-start;border-top:none;border-right:1px solid var(--line);padding-top:max(10px,env(safe-area-inset-top))}
+ #osnav button{flex:0 0 auto;padding:12px 0}
+ .panel{bottom:0;left:64px}
 }
 </style>
 </head>
@@ -119,9 +143,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
     <div class="title">🧭 AI意思決定OS</div>
     <div class="sub" id="subtitle">メンターと議論する</div>
   </div>
-  <button class="icon" id="runsBtn" title="AI会話ログ" style="font-size:18px">🗂</button>
-  <button class="icon" id="settingsBtn" title="設定" style="font-size:18px">⚙️</button>
-  <button class="icon" id="decisionsBtn" title="決定事項" style="font-size:18px">📌</button>
+
 </header>
 <div class="wrap">
   <div class="scrim" id="scrim"></div>
@@ -166,6 +188,17 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
   <div class="panel-h"><b>🗂 AI会話ログ（閲覧専用）</b><button id="runClose" aria-label="閉じる">✕</button></div>
   <div class="panel-body" id="runBody"></div>
 </div>
+<div class="panel" id="homePanel">
+  <div class="panel-h"><b>🏠 ホーム</b><span class="sub" id="homeAcct"></span></div>
+  <div class="panel-body" id="homeBody"></div>
+</div>
+<nav id="osnav">
+  <button data-scr="home">🏠<span>ホーム</span></button>
+  <button data-scr="chat">💬<span>チャット</span></button>
+  <button data-scr="dec">📌<span>決定</span></button>
+  <button data-scr="runs">🗂<span>AI会話</span></button>
+  <button data-scr="set">⚙️<span>設定</span></button>
+</nav>
 <script>
 var TOKEN = location.pathname.split('/').filter(Boolean)[1] || '';
 var API = '/api/' + TOKEN + '/os';
@@ -185,13 +218,16 @@ function openDrawer(o){el('drawer').classList.toggle('open',o);el('scrim').class
 el('menuBtn').onclick=function(){openDrawer(!el('drawer').classList.contains('open'))};
 el('scrim').onclick=function(){openDrawer(false)};
 
+function updateBanner(stub){
+  if(stub){
+    el('banner').style.display='block';
+    el('banner').textContent='⚠ LLM未接続: 今はスタブ応答です。GEMINI_API_KEY / ANTHROPIC_API_KEY などを設定すると実際に思考します。';
+  } else {
+    el('banner').style.display='none';
+  }
+}
 function loadStatus(){
-  api('/status').then(function(s){
-    if(!s.llm_connected){
-      el('banner').style.display='block';
-      el('banner').textContent='⚠ LLM未接続: 今はスタブ応答です。ANTHROPIC_API_KEY などを設定するとメンターが実際に思考します。';
-    }
-  }).catch(function(){});
+  api('/status').then(function(s){ updateBanner(!s.llm_connected); }).catch(function(){});
 }
 
 function loadChats(){
@@ -270,6 +306,7 @@ function doSend(text){
     box.appendChild(msgNode(d.mentor));
     if(d.monitor) box.appendChild(msgNode(d.monitor));
     box.scrollTop=box.scrollHeight;
+    updateBanner(d.stub);
     loadChats();
   }).catch(function(e){removeTyping();var er=document.createElement('div');er.className='typing';er.textContent='エラー: '+e.message;box.appendChild(er)})
     .then(function(){sending=false;el('sendBtn').disabled=false});
@@ -336,10 +373,8 @@ el('proposeBtn').onclick=propose;
 
 // ── 決定事項パネル ──
 var decData=null;
-function openDecisions(){el('decPanel').classList.add('open');setActiveTab('active');loadDecisions('active')}
-function closeDecisions(){el('decPanel').classList.remove('open')}
-el('decisionsBtn').onclick=openDecisions;
-el('decClose').onclick=closeDecisions;
+function openDecisions(){setActiveTab('active');loadDecisions('active')}
+el('decClose').onclick=function(){showScreen('chat')};
 function setActiveTab(tab){Array.prototype.forEach.call(document.querySelectorAll('.tabs .tab'),function(x){x.classList.toggle('active',x.getAttribute('data-tab')===tab)})}
 Array.prototype.forEach.call(document.querySelectorAll('.tabs .tab'),function(t){
   t.onclick=function(){var tab=t.getAttribute('data-tab');setActiveTab(tab);loadDecisions(tab)};
@@ -396,15 +431,13 @@ function delegate(){
     var t=el('wtyping'); if(t)t.remove();
     if(d.log&&d.log.length) box.appendChild(workLogNode(d.log));
     if(d.mentor) box.appendChild(msgNode(d.mentor));
-    box.scrollTop=box.scrollHeight; loadChats();
+    box.scrollTop=box.scrollHeight; updateBanner(d.stub); loadChats();
   }).catch(function(e){var t=el('wtyping');if(t)t.remove();var er=document.createElement('div');er.className='typing';er.textContent='エラー: '+e.message;box.appendChild(er)})
     .then(function(){sending=false;el('sendBtn').disabled=false;el('delegateBtn').disabled=false});
 }
 el('delegateBtn').onclick=delegate;
 
-function openRuns(){el('runPanel').classList.add('open');loadRuns()}
-el('runsBtn').onclick=openRuns;
-el('runClose').onclick=function(){el('runPanel').classList.remove('open')};
+el('runClose').onclick=function(){showScreen('chat')};
 function loadRuns(){
   el('runBody').innerHTML='<div class="empty2">読み込み中…</div>';
   api('/runs').then(function(d){
@@ -430,10 +463,8 @@ function loadRuns(){
 
 // ── 役割別モデル設定 ──
 var ROLE_JA={mentor:'メンター兼司令塔',monitor:'特命監視官',recorder:'記録官',worker:'作業AI群'};
-function openSettings(){el('setPanel').classList.add('open');loadRoles()}
-function closeSettings(){el('setPanel').classList.remove('open')}
-el('settingsBtn').onclick=openSettings;
-el('setClose').onclick=closeSettings;
+var DEFAULT_MODELS={anthropic:'claude-sonnet-4-20250514',openai:'gpt-4o',gemini:'gemini-2.0-flash'};
+el('setClose').onclick=function(){showScreen('chat')};
 function loadRoles(){
   el('roleList').innerHTML='<div class="empty2">読み込み中…</div>';
   api('/roles').then(function(d){
@@ -451,6 +482,8 @@ function loadRoles(){
         '<div class="r"><select>'+opts+'</select><input value="'+esc(r.model)+'" placeholder="モデル名(空欄で既定)"></div>'+
         '<button class="save">保存</button><span class="saved" style="display:none">保存しました</span>';
       var sel=box.querySelector('select'), inp=box.querySelector('input'), sv=box.querySelector('.saved');
+      // プロバイダを切り替えたらモデル名もそのプロバイダの既定に置き換える(旧モデル名の残骸を防ぐ)
+      sel.onchange=function(){inp.value=DEFAULT_MODELS[sel.value]||''};
       box.querySelector('.save').onclick=function(){
         api('/roles',{method:'PUT',body:JSON.stringify({role:r.role,provider:sel.value,model:inp.value})}).then(function(){
           sv.style.display='inline'; setTimeout(function(){sv.style.display='none'},1500);
@@ -459,6 +492,70 @@ function loadRoles(){
       list.appendChild(box);
     });
   }).catch(function(e){el('roleList').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
+}
+
+// ── 画面切替(ナビ: スマホ=下タブ / PC=左レール) ──
+var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel'};
+function showScreen(scr){
+  Object.keys(PANELS).forEach(function(k){el(PANELS[k]).classList.toggle('open',k===scr)});
+  Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){b.classList.toggle('active',b.getAttribute('data-scr')===scr)});
+  if(scr==='home')loadHome();
+  if(scr==='dec')openDecisions();
+  if(scr==='runs')loadRuns();
+  if(scr==='set')loadRoles();
+}
+Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){
+  b.onclick=function(){showScreen(b.getAttribute('data-scr'))};
+});
+
+// ── ホーム画面(実装準備設計書 第4章) ──
+function hrow(title,meta,onclick){
+  var d=document.createElement('div'); d.className='hrow';
+  d.innerHTML='<div class="ht">'+esc(title)+'</div><div class="hm">'+esc(meta||'')+'</div>';
+  if(onclick){d.style.cursor='pointer';d.onclick=onclick}
+  return d;
+}
+function loadHome(){
+  var body=el('homeBody');
+  body.innerHTML='<div class="empty2">読み込み中…</div>';
+  Promise.all([api('/roles'),api('/decisions'),api('/chats')]).then(function(rs){
+    var roles=rs[0], dec=rs[1], chats=rs[2].chats;
+    body.innerHTML='';
+    // 1. AI稼働状況
+    var sec1=document.createElement('div'); sec1.className='home-sec';
+    sec1.innerHTML='<h3>AI稼働状況</h3>';
+    var card=document.createElement('div'); card.className='hcard';
+    roles.roles.forEach(function(r){
+      var live=roles.keys[r.provider];
+      var row=document.createElement('div'); row.className='stat';
+      row.innerHTML='<span>'+esc(ROLE_JA[r.role]||r.role)+'</span><span class="sm">'+esc(r.provider+' / '+r.model)+'</span>'+
+        '<span class="badge '+(live?'run':'stub')+'">'+(live?'稼働中':'スタブ')+'</span>';
+      card.appendChild(row);
+    });
+    sec1.appendChild(card); body.appendChild(sec1);
+    // 2. 未承認の保存候補(承認待ち)
+    var sec2=document.createElement('div'); sec2.className='home-sec';
+    sec2.innerHTML='<h3>未承認の決定事項(承認待ち '+dec.pending.length+'件)</h3>';
+    if(!dec.pending.length){var e2=document.createElement('div');e2.className='hcard';e2.style.color='var(--muted)';e2.style.fontSize='13px';e2.textContent='承認待ちはありません';sec2.appendChild(e2);}
+    dec.pending.forEach(function(c){var cd=document.createElement('div');cd.className='card';cd.innerHTML=cardHtml(c);wireCard(cd,c);sec2.appendChild(cd)});
+    body.appendChild(sec2);
+    // 3. 最近のチャット
+    var sec3=document.createElement('div'); sec3.className='home-sec';
+    sec3.innerHTML='<h3>最近のチャット</h3>';
+    if(!chats.length){var e3=document.createElement('div');e3.className='hcard';e3.style.color='var(--muted)';e3.style.fontSize='13px';e3.textContent='まだ会話がありません';sec3.appendChild(e3);}
+    chats.slice(0,5).forEach(function(c){
+      sec3.appendChild(hrow(c.title,(c.message_count||0)+'件',function(){showScreen('chat');openChat(c.id,c.title)}));
+    });
+    body.appendChild(sec3);
+    // 4. 最近の決定事項(Active)
+    var sec4=document.createElement('div'); sec4.className='home-sec';
+    sec4.innerHTML='<h3>最近の決定事項</h3>';
+    if(!dec.active.length){var e4=document.createElement('div');e4.className='hcard';e4.style.color='var(--muted)';e4.style.fontSize='13px';e4.textContent='有効な決定はまだありません';sec4.appendChild(e4);}
+    dec.active.slice(0,5).forEach(function(m){
+      sec4.appendChild(hrow(m.title||m.content.slice(0,40),m.created_at,function(){showScreen('dec')}));
+    });
+    body.appendChild(sec4);
+  }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
 }
 
 // ── PWA: サービスワーカー登録 + インストールボタン ──
@@ -475,7 +572,7 @@ el('installBtn').onclick=function(){
 };
 window.addEventListener('appinstalled',function(){el('installBtn').style.display='none'});
 
-renderMessages([]); loadStatus(); loadChats();
+renderMessages([]); loadStatus(); loadChats(); showScreen('home');
 </script>
 </body>
 </html>`;
