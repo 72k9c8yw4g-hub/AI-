@@ -15,3 +15,14 @@ database_id = "REPLACE_WITH_DATABASE_ID"
 
 [observability]
 enabled = true
+
+# 自動バックアップ(毎週月曜 03:00 UTC = 12:00 JST)。R2未設定でも安全(実行記録のみ残る)
+[triggers]
+crons = ["0 3 * * 1"]
+
+# 自動バックアップの保存先。有効にするには:
+#  1) Cloudflare ダッシュボード → R2 → バケット「dscribe-backup」を作成
+#  2) 下2行のコメント(#)を外してコミット → 自動デプロイ
+# [[r2_buckets]]
+# binding = "BACKUP"
+# bucket_name = "dscribe-backup"

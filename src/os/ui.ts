@@ -182,6 +182,7 @@ body{padding-bottom:56px}
   <div class="panel-body">
     <div class="keys" id="keyStatus"></div>
     <div id="roleList"></div>
+    <div id="backupCard"></div>
   </div>
 </div>
 <div class="panel" id="runPanel">
@@ -608,7 +609,32 @@ function loadModelLists(ki){
     }).catch(function(){});
   });
 }
+// 💾 バックアップ(オーナーのみ表示。非オーナーは403で静かに非表示)
+function loadBackup(){
+  var card=el('backupCard'); card.innerHTML='';
+  api('/backup').then(function(d){
+    var box=document.createElement('div'); box.className='role'; box.style.marginTop='16px';
+    var last=d.last;
+    var lastLine = last
+      ? (last.ok ? '✅ 最終バックアップ: '+esc(last.at)+' ('+esc(String(last.users))+'ユーザー / '+Math.round(last.bytes/1024)+'KB)' : '⚠ 前回: '+esc(last.error||'失敗'))
+      : 'まだ実行されていません';
+    var setup = d.enabled ? '' :
+      '<div class="dm" style="margin-top:8px;line-height:1.7">自動保存を有効にするには: Cloudflare で R2 バケット <b>dscribe-backup</b> を作成 → wrangler.toml の [[r2_buckets]] のコメントを外して再デプロイ。未設定でも毎週の実行記録だけは残ります(📤の手動エクスポートは常に使えます)。</div>';
+    box.innerHTML='<h4>💾 バックアップ <span class="dm" style="font-weight:normal">'+(d.enabled?'R2接続済み・毎週月曜に自動実行':'R2未設定')+'</span></h4>'+
+      '<div class="dm">'+lastLine+'</div>'+setup+
+      '<button class="save" id="backupNow" style="margin-top:10px">今すぐバックアップ</button>';
+    card.appendChild(box);
+    el('backupNow').onclick=function(){
+      el('backupNow').disabled=true; el('backupNow').textContent='実行中…';
+      api('/backup',{method:'POST'}).then(function(r){
+        alert(r.status.ok ? 'バックアップ完了: '+r.status.location : '実行結果: '+(r.status.error||'失敗'));
+        loadBackup();
+      }).catch(function(e){alert(e.message);loadBackup()});
+    };
+  }).catch(function(){/* 非オーナー(403)は表示しない */});
+}
 function loadRoles(){
+  loadBackup();
   el('roleList').innerHTML='<div class="empty2">読み込み中…</div>';
   api('/roles').then(function(d){
     var ki=d.keyInfo||{};

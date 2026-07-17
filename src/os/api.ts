@@ -2,6 +2,7 @@
 // index.ts の handleApi から head === "os" のとき委譲される。認証済み userId を受け取る。
 
 import { anyKeyPresent, listProviderModels, type LlmSecrets, type Provider } from "./provider";
+import { lastBackupStatus, runBackup } from "./backup";
 import { runMentorTurn, runRecorderTurn, runMonitorTurn, runWorkerTask, runMentorConsolidation } from "./org";
 import {
   activeDecisionList,
@@ -45,9 +46,10 @@ export async function handleOsApi(
   req: Request,
   db: D1Database,
   userId: number,
-  envSecrets: LlmSecrets,
+  envSecrets: LlmSecrets & { BACKUP?: R2Bucket },
   rest: string[],
-  url: URL
+  url: URL,
+  isOwner = false
 ): Promise<Response> {
   const method = req.method;
   const head = rest[0] ?? "";
@@ -282,6 +284,19 @@ export async function handleOsApi(
     } catch (e) {
       return json({ models: [], error: e instanceof Error ? e.message : String(e) });
     }
+  }
+
+  // /os/backup … 自動バックアップの状態と手動実行(オーナー限定 — 全ユーザーのデータを含むため)
+  if (head === "backup") {
+    if (!isOwner) return json({ error: "オーナーのみ実行できます" }, 403);
+    if (method === "GET") {
+      return json({ enabled: !!envSecrets.BACKUP, last: await lastBackupStatus(db) });
+    }
+    if (method === "POST") {
+      const status = await runBackup(db, envSecrets.BACKUP);
+      return json({ status });
+    }
+    return notFound();
   }
 
   // /os/roles … 役割別モデル設定(技術設計書 第4-5章)
