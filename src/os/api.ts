@@ -17,6 +17,7 @@ import {
   effectiveSecrets,
   finishWorkerRun,
   getChat,
+  getDecisionDetail,
   getRoleModel,
   getWorkerLog,
   getWorkerRun,
@@ -29,6 +30,7 @@ import {
   listWorkerRuns,
   rejectCandidate,
   renameChat,
+  searchOs,
   setRoleModel,
   setUserApiKey,
 } from "./db";
@@ -202,11 +204,30 @@ export async function handleOsApi(
     return notFound();
   }
 
-  // GET /os/decisions … 決定事項(Active / Archived / 承認待ち)
-  if (head === "decisions" && method === "GET") {
-    const { active, archived } = await listDecisions(db, userId);
-    const pending = await listPendingCandidates(db, userId);
-    return json({ active, archived, pending });
+  // /os/decisions … 決定事項(一覧 / 詳細)
+  if (head === "decisions") {
+    // GET /os/decisions/<id> … 詳細(更新履歴・元チャット・関連決定つき) — 実装準備第8章
+    const did = Number(rest[1]);
+    if (Number.isInteger(did) && did > 0 && method === "GET") {
+      const detail = await getDecisionDetail(db, userId, did);
+      return detail ? json(detail) : notFound();
+    }
+    if (!rest[1] && method === "GET") {
+      const { active, archived } = await listDecisions(db, userId);
+      const pending = await listPendingCandidates(db, userId);
+      return json({ active, archived, pending });
+    }
+    return notFound();
+  }
+
+  // GET /os/search?q=… … OS内の横断検索(チャット・決定・AI会話ログ) — 実装準備第12章
+  if (head === "search" && method === "GET") {
+    try {
+      const r = await searchOs(db, userId, url.searchParams.get("q") ?? "");
+      return json(r);
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
   }
 
   // /os/runs … 作業AIのアサイン履歴と AI会話ログ(閲覧専用)

@@ -2,7 +2,7 @@
 // すべて user_id スコープ。既存 Dscribe の分離方針(ユーザーごとに完全独立)を踏襲する。
 
 import { resolveModel, type LlmSecrets, type Provider, type RoleModel } from "./provider";
-import { saveMemory, listMemories, type MemoryRow } from "../db";
+import { saveMemory, listMemories, getMemory, getMemoryChain, likeEscape, splitTerms, type MemoryRow } from "../db";
 
 export interface OsChat {
   id: number;
@@ -246,6 +246,138 @@ export async function listDecisions(db: D1Database, userId: number): Promise<{ a
 export async function activeDecisionList(db: D1Database, userId: number): Promise<{ id: number; title: string }[]> {
   const all = await listMemories(db, userId, { kind: "decision", limit: 200, activeOnly: true });
   return all.map((m) => ({ id: m.id, title: m.title || m.content.slice(0, 40) }));
+}
+
+// ── 決定事項の詳細 (実装準備設計書 第8章) ──────────────────
+// タイトル・内容・状態・タグ・作成日に加えて、更新履歴(supersedesチェーン)・
+// 元チャット(どの会話の保存候補から生まれたか)・関連決定(タグ/プロジェクトの重なり)を返す。
+export interface DecisionDetail {
+  decision: MemoryRow;
+  status: "active" | "archived";
+  chain: { id: number; title: string; content: string; created_at: string; reason: string | null; current: boolean }[];
+  sourceChat: { chat_id: number; title: string; candidate_created_at: string } | null;
+  related: { id: number; title: string; status: "active" | "archived" }[];
+}
+
+export async function getDecisionDetail(db: D1Database, userId: number, id: number): Promise<DecisionDetail | null> {
+  const m = await getMemory(db, userId, id);
+  if (!m || m.kind !== "decision") return null;
+
+  // 更新履歴: 旧→新の線形チェーン
+  const chainRows = await getMemoryChain(db, userId, id);
+  const chain = chainRows.map((c) => ({
+    id: c.id,
+    title: c.title || c.content.slice(0, 40),
+    content: c.content,
+    created_at: c.created_at,
+    reason: c.supersede_reason,
+    current: !c.superseded_by_id,
+  }));
+
+  // 元チャット: この決定(またはチェーン内の決定)を生んだ保存候補 → チャット
+  const chainIds = chainRows.map((c) => c.id);
+  let sourceChat: DecisionDetail["sourceChat"] = null;
+  if (chainIds.length) {
+    const src = await db
+      .prepare(
+        `SELECT oc.chat_id, oc.created_at, c.title
+           FROM os_candidates oc JOIN os_chats c ON c.id = oc.chat_id
+          WHERE oc.user_id = ? AND oc.memory_id IN (${chainIds.map(() => "?").join(",")})
+          ORDER BY oc.id ASC LIMIT 1`
+      )
+      .bind(userId, ...chainIds)
+      .first<{ chat_id: number; created_at: string; title: string }>();
+    if (src) sourceChat = { chat_id: src.chat_id, title: src.title, candidate_created_at: src.created_at };
+  }
+
+  // 関連決定: タグまたはプロジェクトが重なる他の決定(チェーン内は除く)
+  const related: DecisionDetail["related"] = [];
+  const all = await listMemories(db, userId, { kind: "decision", limit: 300 });
+  const myTags = (m.tags || "").split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+  for (const d of all) {
+    if (chainIds.includes(d.id)) continue;
+    const tags = (d.tags || "").split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const tagHit = myTags.length && tags.some((t) => myTags.includes(t));
+    const projHit = m.project && d.project === m.project;
+    if (tagHit || projHit) related.push({ id: d.id, title: d.title || d.content.slice(0, 40), status: d.superseded_by_id ? "archived" : "active" });
+    if (related.length >= 5) break;
+  }
+
+  return { decision: m, status: m.superseded_by_id ? "archived" : "active", chain, sourceChat, related };
+}
+
+// ── OS内の横断検索 (実装準備設計書 第12章) ─────────────────
+// 対象: チャット(メッセージ全文)・決定事項(旧版含む)・AI会話ログ。スペース区切りのAND検索。
+export interface OsSearchResults {
+  chats: { chat_id: number; title: string; role: string; snippet: string; created_at: string }[];
+  decisions: { id: number; title: string; snippet: string; status: "active" | "archived"; created_at: string }[];
+  ailogs: { run_id: number; task: string; name: string; snippet: string; created_at: string }[];
+}
+
+function snippet(text: string, term: string, width = 60): string {
+  const i = text.toLowerCase().indexOf(term.toLowerCase());
+  const start = Math.max(0, (i < 0 ? 0 : i) - Math.floor(width / 3));
+  const s = text.slice(start, start + width).replace(/\s+/g, " ").trim();
+  return (start > 0 ? "…" : "") + s + (start + width < text.length ? "…" : "");
+}
+
+export async function searchOs(db: D1Database, userId: number, query: unknown): Promise<{ terms: string[]; results: OsSearchResults }> {
+  const terms = splitTerms(typeof query === "string" ? query : "");
+  if (!terms.length) throw new Error("q は必須です");
+  const likeBinds = (n: number) => terms.flatMap((t) => Array(n).fill(`%${likeEscape(t)}%`));
+  const results: OsSearchResults = { chats: [], decisions: [], ailogs: [] };
+
+  // チャット(メッセージ全文)。監視官の警告はノイズなので除外
+  {
+    const cond = terms.map(() => "m.content LIKE ? ESCAPE '\\'").join(" AND ");
+    const { results: rows } = await db
+      .prepare(
+        `SELECT m.chat_id, c.title, m.role, m.content, m.created_at
+           FROM os_messages m JOIN os_chats c ON c.id = m.chat_id
+          WHERE m.user_id = ? AND m.role != 'monitor' AND ${cond}
+          ORDER BY m.id DESC LIMIT 10`
+      )
+      .bind(userId, ...likeBinds(1))
+      .all<{ chat_id: number; title: string; role: string; content: string; created_at: string }>();
+    results.chats = rows.map((r) => ({ chat_id: r.chat_id, title: r.title, role: r.role, snippet: snippet(r.content, terms[0]), created_at: r.created_at }));
+  }
+
+  // 決定事項(旧版含む)
+  {
+    const cond = terms.map(() => "(m.title LIKE ? ESCAPE '\\' OR m.content LIKE ? ESCAPE '\\' OR m.tags LIKE ? ESCAPE '\\')").join(" AND ");
+    const { results: rows } = await db
+      .prepare(
+        `SELECT m.id, m.title, m.content, m.superseded_by_id, m.created_at
+           FROM memories m WHERE m.user_id = ? AND m.kind = 'decision' AND ${cond}
+          ORDER BY m.id DESC LIMIT 10`
+      )
+      .bind(userId, ...likeBinds(3))
+      .all<{ id: number; title: string; content: string; superseded_by_id: number | null; created_at: string }>();
+    results.decisions = rows.map((r) => ({
+      id: r.id,
+      title: r.title || r.content.slice(0, 40),
+      snippet: snippet(r.content, terms[0]),
+      status: r.superseded_by_id ? "archived" : "active",
+      created_at: r.created_at,
+    }));
+  }
+
+  // AI会話ログ(作業AIの議論)
+  {
+    const cond = terms.map(() => "wm.content LIKE ? ESCAPE '\\'").join(" AND ");
+    const { results: rows } = await db
+      .prepare(
+        `SELECT wm.run_id, wr.task, wm.name, wm.content, wm.created_at
+           FROM os_worker_msgs wm JOIN os_worker_runs wr ON wr.id = wm.run_id
+          WHERE wm.user_id = ? AND ${cond}
+          ORDER BY wm.id DESC LIMIT 10`
+      )
+      .bind(userId, ...likeBinds(1))
+      .all<{ run_id: number; task: string; name: string; content: string; created_at: string }>();
+    results.ailogs = rows.map((r) => ({ run_id: r.run_id, task: r.task, name: r.name, snippet: snippet(r.content, terms[0]), created_at: r.created_at }));
+  }
+
+  return { terms, results };
 }
 
 // ── 役割別モデル設定 ──────────────────────────────────────
