@@ -89,6 +89,13 @@ const OS_STATEMENTS: string[] = [
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, provider)
   )`,
+  // os_llm_usage … 1日あたりのLLM呼び出し回数(コスト暴走・トークン漏洩時の焼き尽くし対策)
+  `CREATE TABLE IF NOT EXISTS os_llm_usage (
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    day     TEXT NOT NULL,
+    calls   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+  )`,
 ];
 
 let osSchemaReady = false;

@@ -9,6 +9,7 @@ import {
   addWorkerMsg,
   approveCandidate,
   autoTitleIfNeeded,
+  consumeLlmBudget,
   createCandidate,
   createChat,
   createWorkerRun,
@@ -97,10 +98,18 @@ export async function handleOsApi(
       const content = (typeof body.content === "string" ? body.content : "").trim();
       if (!content) return json({ error: "content が空です" }, 400);
 
+      // 1送信 = メンター + 監視官の2回。1日上限を先に消費(超過なら何も書かずに返す)
+      try {
+        await consumeLlmBudget(db, userId, 2);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 429);
+      }
+
       const userMsg = await addMessage(db, userId, id, "user", content);
       await autoTitleIfNeeded(db, userId, id, content);
 
-      const history = await listMessages(db, userId, id);
+      // LLM に渡す履歴は直近30件まで(長期チャットのコスト増大・コンテキスト溢れ防止)
+      const history = (await listMessages(db, userId, id)).slice(-30);
       const rm = await getRoleModel(db, userId, "mentor");
       const result = await runMentorTurn(history, rm, secrets);
       const mentorMsg = await addMessage(db, userId, id, "mentor", result.text);
@@ -109,7 +118,7 @@ export async function handleOsApi(
       let monitorMsg = null;
       const active = await activeDecisionList(db, userId);
       const monRm = await getRoleModel(db, userId, "monitor");
-      const withMentor = await listMessages(db, userId, id);
+      const withMentor = (await listMessages(db, userId, id)).slice(-30);
       const warnings = await runMonitorTurn(withMentor, active, monRm, secrets);
       if (warnings.length) {
         const text = warnings.map((w) => `[${w.type}] ${w.message}`).join("\n");
@@ -124,8 +133,15 @@ export async function handleOsApi(
       const chat = await getChat(db, userId, id);
       if (!chat) return notFound();
       const body = (await req.json().catch(() => ({}))) as { task?: unknown };
-      const task = (typeof body.task === "string" ? body.task : "").trim();
+      const task = (typeof body.task === "string" ? body.task : "").trim().slice(0, 4000);
       if (!task) return json({ error: "task が空です" }, 400);
+
+      // 委任 = 作業AI3回 + メンター整理1回 = 4回ぶんの予算
+      try {
+        await consumeLlmBudget(db, userId, 4);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 429);
+      }
 
       await addMessage(db, userId, id, "user", task);
       await autoTitleIfNeeded(db, userId, id, task);
@@ -139,26 +155,38 @@ export async function handleOsApi(
         .join("\n");
 
       const run = await createWorkerRun(db, userId, id, task);
-      const wrm = await getRoleModel(db, userId, "worker");
-      const wr = await runWorkerTask(task, ctx, wrm, secrets);
-      let seq = 1;
-      for (const item of wr.log) await addWorkerMsg(db, userId, run.id, seq++, item.role, item.name, item.content);
+      try {
+        const wrm = await getRoleModel(db, userId, "worker");
+        const wr = await runWorkerTask(task, ctx, wrm, secrets);
+        let seq = 1;
+        for (const item of wr.log) await addWorkerMsg(db, userId, run.id, seq++, item.role, item.name, item.content);
 
-      // 成果物はメンターが検証・整理してからユーザーに提示(直接は出さない)
-      const mrm = await getRoleModel(db, userId, "mentor");
-      const cons = await runMentorConsolidation(task, wr.deliverable, mrm, secrets);
-      const mentorMsg = await addMessage(db, userId, id, "mentor", `🛠【作業AIの成果・メンター整理】\n${cons.text}`);
-      await finishWorkerRun(db, userId, run.id, cons.text);
+        // 成果物はメンターが検証・整理してからユーザーに提示(直接は出さない)
+        const mrm = await getRoleModel(db, userId, "mentor");
+        const cons = await runMentorConsolidation(task, wr.deliverable, mrm, secrets);
+        const mentorMsg = await addMessage(db, userId, id, "mentor", `🛠【作業AIの成果・メンター整理】\n${cons.text}`);
+        await finishWorkerRun(db, userId, run.id, cons.text);
 
-      return json({ run: { ...run, status: "done" }, log: wr.log, mentor: mentorMsg, stub: wr.stub || cons.stub });
+        return json({ run: { ...run, status: "done" }, log: wr.log, mentor: mentorMsg, stub: wr.stub || cons.stub });
+      } catch (e) {
+        // 途中で落ちても run を「running」のまま残さない(ゾンビ防止)
+        const msg = e instanceof Error ? e.message : String(e);
+        await finishWorkerRun(db, userId, run.id, `エラーで中断: ${msg.slice(0, 300)}`, "failed");
+        return json({ error: `作業AIの実行に失敗しました: ${msg.slice(0, 200)}` }, 500);
+      }
     }
 
     // POST /os/chats/<id>/propose … 記録官が会話から保存候補を生成(まだ保存しない)
     if (action === "propose" && method === "POST") {
       const chat = await getChat(db, userId, id);
       if (!chat) return notFound();
-      const msgs = await listMessages(db, userId, id);
+      const msgs = (await listMessages(db, userId, id)).slice(-30);
       if (!msgs.length) return json({ save: false, reason: "まだ会話がありません" });
+      try {
+        await consumeLlmBudget(db, userId, 1);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 429);
+      }
       const active = await activeDecisionList(db, userId);
       const rm = await getRoleModel(db, userId, "recorder");
       const r = await runRecorderTurn(msgs, active, rm, secrets);

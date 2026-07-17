@@ -220,7 +220,7 @@ var sending = false;
 document.getElementById('recordsLink').href = APP_ROOT;
 
 function el(id){return document.getElementById(id)}
-function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;'})}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function api(path, opts){
   return fetch(API + path, Object.assign({headers:{'content-type':'application/json'}}, opts||{}))
     .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})});

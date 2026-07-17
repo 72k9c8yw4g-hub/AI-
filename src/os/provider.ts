@@ -116,9 +116,10 @@ function stubReply(history: ChatMsg[]): string {
 // もうモデル名を人間が推測しなくていいようにするための機能。
 export async function listProviderModels(p: Provider, key: string): Promise<string[]> {
   if (p === "gemini") {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(key)}`
-    );
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200`, {
+      headers: { "x-goog-api-key": key },
+      signal: AbortSignal.timeout(15_000),
+    });
     if (!res.ok) throw new Error(`gemini ${res.status}`);
     const data = (await res.json()) as {
       models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>;
@@ -133,12 +134,16 @@ export async function listProviderModels(p: Provider, key: string): Promise<stri
   if (p === "anthropic") {
     const res = await fetch("https://api.anthropic.com/v1/models?limit=100", {
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`anthropic ${res.status}`);
     const data = (await res.json()) as { data?: Array<{ id?: string }> };
     return (data.data ?? []).map((m) => m.id ?? "").filter(Boolean).sort().reverse();
   }
-  const res = await fetch("https://api.openai.com/v1/models", { headers: { authorization: `Bearer ${key}` } });
+  const res = await fetch("https://api.openai.com/v1/models", {
+    headers: { authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!res.ok) throw new Error(`openai ${res.status}`);
   const data = (await res.json()) as { data?: Array<{ id?: string }> };
   return (data.data ?? [])
@@ -160,6 +165,7 @@ async function callAnthropic(system: string, history: ChatMsg[], model: string, 
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({ model, max_tokens: 1024, system, messages }),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw new Error(`anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
@@ -172,6 +178,7 @@ async function callOpenAI(system: string, history: ChatMsg[], model: string, key
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({ model, max_tokens: 1024, messages }),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
@@ -182,14 +189,13 @@ async function callGemini(system: string, history: ChatMsg[], model: string, key
   const contents = history
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents }),
-    }
-  );
+  // キーはURLクエリではなくヘッダで送る(URLはログに残りやすいため)
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents }),
+    signal: AbortSignal.timeout(60_000),
+  });
   if (!res.ok) throw new Error(`gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
   return (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");

@@ -13,6 +13,7 @@ import { importConversations, importProjects } from "./importer";
 import { ensureSchema } from "./schema";
 import { ensureOsSchema } from "./os/schema";
 import { handleOsApi } from "./os/api";
+import { exportOs } from "./os/db";
 import { renderOsApp } from "./os/ui";
 import { ICON_192_B64, ICON_512_B64, iconPng, manifestFor, serviceWorker } from "./os/assets";
 import {
@@ -86,7 +87,18 @@ function json(data: unknown, status = 200): Response {
 }
 
 function html(body: string, status = 200): Response {
-  return new Response(body, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
+  return new Response(body, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      // トークンがURLに入る設計のため、外部への漏洩経路を明示的に塞ぐ
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Content-Security-Policy":
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+    },
+  });
 }
 
 const notFound = () => json({ error: "not found" }, 404);
@@ -284,13 +296,14 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
     if (type === "tasks") return json({ ...base, tasks: await listTasks(db, uid, { status: "all", limit: 2000 }) });
     if (type === "conversations") return json({ ...base, conversations: await exportConversations(db, uid) });
     if (type === "projects") return json({ ...base, projects: await listProjects(db, uid) });
-    const [tasks, memories, projects, conversations] = await Promise.all([
+    const [tasks, memories, projects, conversations, os] = await Promise.all([
       listTasks(db, uid, { status: "all", limit: 2000 }),
       listMemories(db, uid, { limit: 2000 }),
       listProjects(db, uid),
       exportConversations(db, uid),
+      exportOs(db, uid), // OSのチャット・保存候補・AI会話ログ(APIキーは含めない)
     ]);
-    return json({ ...base, projects, memories, tasks, conversations });
+    return json({ ...base, projects, memories, tasks, conversations, os });
   }
 
   // /os/… … AI意思決定OS (チャット + メンター)
