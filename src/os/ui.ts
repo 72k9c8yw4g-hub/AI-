@@ -192,10 +192,21 @@ body{padding-bottom:56px}
   <div class="panel-h"><b>🏠 ホーム</b><span class="sub" id="homeAcct"></span></div>
   <div class="panel-body" id="homeBody"></div>
 </div>
+<div class="panel" id="searchPanel">
+  <div class="panel-h"><b>🔍 検索</b><button id="searchClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-body">
+    <div class="r" style="display:flex;gap:8px;margin-bottom:14px">
+      <input id="searchInput" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit" placeholder="チャット・決定事項・AI会話を横断検索(スペースでAND)">
+      <button class="primary" id="searchBtn">検索</button>
+    </div>
+    <div id="searchBody"><div class="empty2">キーワードを入れて検索してください。</div></div>
+  </div>
+</div>
 <nav id="osnav">
   <button data-scr="home">🏠<span>ホーム</span></button>
   <button data-scr="chat">💬<span>チャット</span></button>
   <button data-scr="dec">📌<span>決定</span></button>
+  <button data-scr="search">🔍<span>検索</span></button>
   <button data-scr="runs">🗂<span>AI会話</span></button>
   <button data-scr="set">⚙️<span>設定</span></button>
 </nav>
@@ -402,10 +413,102 @@ function renderDec(tab){
     d.innerHTML=badge+'<span class="dm">'+esc(m.created_at||'')+'</span>'+
       '<div class="dt">'+esc(m.title||'(無題)')+'</div>'+
       '<div class="db">'+esc(m.content||'')+'</div>'+
-      (m.tags?'<div class="dm" style="margin-top:6px">#'+esc(m.tags).split(',').join(' #')+'</div>':'');
+      (m.tags?'<div class="dm" style="margin-top:6px">#'+esc(m.tags).split(',').join(' #')+'</div>':'')+
+      '<div class="dm" style="margin-top:6px">タップで詳細(履歴・元チャット)</div>';
+    d.style.cursor='pointer';
+    d.onclick=function(){loadDecisionDetail(m.id)};
     body.appendChild(d);
   });
 }
+
+// ── 決定事項の詳細(実装準備設計書 第8章: 更新履歴・元チャット・関連決定) ──
+function loadDecisionDetail(id){
+  showScreen('dec');
+  var body=el('decBody');
+  body.innerHTML='<div class="empty2">読み込み中…</div>';
+  api('/decisions/'+id).then(function(d){
+    body.innerHTML='';
+    var back=document.createElement('button'); back.textContent='← 一覧に戻る'; back.style.marginBottom='12px';
+    back.onclick=function(){setActiveTab(d.status==='archived'?'archived':'active');loadDecisions(d.status==='archived'?'archived':'active')};
+    body.appendChild(back);
+    var m=d.decision;
+    var head=document.createElement('div'); head.className='dec'+(d.status==='archived'?' arch':'');
+    head.innerHTML=(d.status==='archived'?'<span class="badge arch">Archived</span>':'<span class="badge active">Active</span>')+
+      '<span class="dm">作成: '+esc(m.created_at||'')+'</span>'+
+      '<div class="dt" style="font-size:16px">'+esc(m.title||'(無題)')+'</div>'+
+      '<div class="db">'+esc(m.content||'')+'</div>'+
+      (m.tags?'<div class="dm" style="margin-top:6px">#'+esc(m.tags).split(',').join(' #')+'</div>':'')+
+      (m.project?'<div class="dm">プロジェクト: '+esc(m.project)+'</div>':'');
+    body.appendChild(head);
+    // 更新履歴
+    var sec=document.createElement('div'); sec.className='home-sec'; sec.style.marginTop='16px';
+    sec.innerHTML='<h3>更新履歴(古い順)</h3>';
+    if(d.chain.length<=1){var e1=document.createElement('div');e1.className='hcard';e1.style.color='var(--muted)';e1.style.fontSize='13px';e1.textContent='変更履歴はありません(初版)';sec.appendChild(e1);}
+    else d.chain.forEach(function(c,i){
+      var r=document.createElement('div'); r.className='dec'+(c.current?'':' arch');
+      r.innerHTML='<span class="badge '+(c.current?'active':'arch')+'">'+(c.current?'★現行':'v'+(i+1))+'</span>'+
+        '<span class="dm">'+esc(c.created_at)+'</span>'+
+        '<div class="dt">'+esc(c.title)+'</div>'+
+        (c.reason?'<div class="dm">変更理由: '+esc(c.reason)+'</div>':'')+
+        (c.id===m.id?'<div class="dm">(表示中)</div>':'');
+      if(c.id!==m.id){r.style.cursor='pointer';r.onclick=function(){loadDecisionDetail(c.id)};}
+      sec.appendChild(r);
+    });
+    body.appendChild(sec);
+    // 元チャット
+    var sec2=document.createElement('div'); sec2.className='home-sec';
+    sec2.innerHTML='<h3>元チャット(作成経緯)</h3>';
+    if(d.sourceChat){
+      var sc=d.sourceChat;
+      sec2.appendChild(hrow('💬 '+sc.title, sc.candidate_created_at, function(){showScreen('chat');openChat(sc.chat_id, sc.title)}));
+    } else {var e2=document.createElement('div');e2.className='hcard';e2.style.color='var(--muted)';e2.style.fontSize='13px';e2.textContent='元チャットの記録はありません(会話以外から保存された決定)';sec2.appendChild(e2);}
+    body.appendChild(sec2);
+    // 関連決定
+    if(d.related.length){
+      var sec3=document.createElement('div'); sec3.className='home-sec';
+      sec3.innerHTML='<h3>関連決定事項</h3>';
+      d.related.forEach(function(r){
+        sec3.appendChild(hrow((r.status==='archived'?'(旧) ':'')+r.title,'',function(){loadDecisionDetail(r.id)}));
+      });
+      body.appendChild(sec3);
+    }
+  }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
+}
+
+// ── 検索(実装準備設計書 第12章: 全体検索 → グループ結果 → 元の場所へ) ──
+function runSearch(){
+  var q=el('searchInput').value.trim();
+  if(!q)return;
+  var body=el('searchBody');
+  body.innerHTML='<div class="empty2">検索中…</div>';
+  api('/search?q='+encodeURIComponent(q)).then(function(d){
+    var r=d.results;
+    body.innerHTML='';
+    var total=r.chats.length+r.decisions.length+r.ailogs.length;
+    var sum=document.createElement('div'); sum.className='hcard'; sum.style.marginBottom='14px'; sum.style.fontSize='13px';
+    sum.textContent='チャット '+r.chats.length+'件 / 決定事項 '+r.decisions.length+'件 / AI会話 '+r.ailogs.length+'件';
+    body.appendChild(sum);
+    if(!total){body.appendChild(Object.assign(document.createElement('div'),{className:'empty2',textContent:'見つかりませんでした。'}));return;}
+    if(r.chats.length){
+      var s1=document.createElement('div'); s1.className='home-sec'; s1.innerHTML='<h3>💬 チャット</h3>';
+      r.chats.forEach(function(c){ s1.appendChild(hrow(c.title+' — '+c.snippet, c.created_at, function(){showScreen('chat');openChat(c.chat_id, c.title)})); });
+      body.appendChild(s1);
+    }
+    if(r.decisions.length){
+      var s2=document.createElement('div'); s2.className='home-sec'; s2.innerHTML='<h3>📌 決定事項</h3>';
+      r.decisions.forEach(function(dd){ s2.appendChild(hrow((dd.status==='archived'?'(旧) ':'')+dd.title+' — '+dd.snippet, dd.created_at, function(){loadDecisionDetail(dd.id)})); });
+      body.appendChild(s2);
+    }
+    if(r.ailogs.length){
+      var s3=document.createElement('div'); s3.className='home-sec'; s3.innerHTML='<h3>🗂 AI会話ログ</h3>';
+      r.ailogs.forEach(function(a){ s3.appendChild(hrow('🛠 '+a.task+' — '+a.snippet, a.created_at, function(){showScreen('runs')})); });
+      body.appendChild(s3);
+    }
+  }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
+}
+el('searchBtn').onclick=runSearch;
+el('searchInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();runSearch()}});
+el('searchClose').onclick=function(){showScreen('chat')};
 
 // ── 作業AI(委任 + AI会話ログ)──
 function workLogNode(log){
@@ -533,7 +636,7 @@ function loadRoles(){
 }
 
 // ── 画面切替(ナビ: スマホ=下タブ / PC=左レール) ──
-var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel'};
+var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel',search:'searchPanel'};
 function showScreen(scr){
   Object.keys(PANELS).forEach(function(k){el(PANELS[k]).classList.toggle('open',k===scr)});
   Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){b.classList.toggle('active',b.getAttribute('data-scr')===scr)});
@@ -541,6 +644,7 @@ function showScreen(scr){
   if(scr==='dec')openDecisions();
   if(scr==='runs')loadRuns();
   if(scr==='set')loadRoles();
+  if(scr==='search')setTimeout(function(){el('searchInput').focus()},50);
 }
 Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){
   b.onclick=function(){showScreen(b.getAttribute('data-scr'))};
