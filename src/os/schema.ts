@@ -80,6 +80,15 @@ const OS_STATEMENTS: string[] = [
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_os_worker_msgs_run ON os_worker_msgs(run_id)`,
+  // os_api_keys … ユーザーが ⚙️ から登録する LLM APIキー。Cloudflare Secret を触れない人向け。
+  // ユーザー単位で分離(このユーザーのトークンを知る人だけが使える = 他データと同じ信頼レベル)。
+  `CREATE TABLE IF NOT EXISTS os_api_keys (
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    provider   TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, provider)
+  )`,
 ];
 
 let osSchemaReady = false;

@@ -1,7 +1,7 @@
 // AI意思決定OS — データアクセス (チャット / メッセージ / 役割モデル設定)。
 // すべて user_id スコープ。既存 Dscribe の分離方針(ユーザーごとに完全独立)を踏襲する。
 
-import { resolveModel, type Provider, type RoleModel } from "./provider";
+import { resolveModel, type LlmSecrets, type Provider, type RoleModel } from "./provider";
 import { saveMemory, listMemories, type MemoryRow } from "../db";
 
 export interface OsChat {
@@ -259,6 +259,75 @@ export async function listRoleModels(db: D1Database, userId: number): Promise<{ 
     out.push({ role, provider: rm.provider, model: rm.model });
   }
   return out;
+}
+
+// ── APIキー (os_api_keys) ─────────────────────────────────
+// ⚙️ から登録するユーザー別キー。Cloudflare Secret(env) より優先する(ユーザーの明示的な意思のため)。
+const KEY_ENV_NAME: Record<Provider, keyof LlmSecrets> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
+};
+
+export interface KeyInfo {
+  set: boolean;
+  source: "db" | "env" | null;
+  tail: string; // 末尾4文字のみ(全文は絶対に返さない)
+}
+
+async function getUserApiKeys(db: D1Database, userId: number): Promise<Partial<Record<Provider, string>>> {
+  const { results } = await db
+    .prepare(`SELECT provider, key FROM os_api_keys WHERE user_id = ?`)
+    .bind(userId)
+    .all<{ provider: string; key: string }>();
+  const out: Partial<Record<Provider, string>> = {};
+  for (const r of results) {
+    if (VALID_PROVIDERS.has(r.provider as Provider) && r.key) out[r.provider as Provider] = r.key;
+  }
+  return out;
+}
+
+// env の Secret と DB のユーザーキーをマージした「実効シークレット」。DB が優先。
+export async function effectiveSecrets(db: D1Database, userId: number, env: LlmSecrets): Promise<LlmSecrets> {
+  const user = await getUserApiKeys(db, userId);
+  return {
+    ANTHROPIC_API_KEY: user.anthropic || env.ANTHROPIC_API_KEY,
+    OPENAI_API_KEY: user.openai || env.OPENAI_API_KEY,
+    GEMINI_API_KEY: user.gemini || env.GEMINI_API_KEY,
+  };
+}
+
+// ⚙️ 表示用: どのプロバイダのキーがどこから来ているか(キー本文は末尾4文字だけ)。
+export async function keyStatus(db: D1Database, userId: number, env: LlmSecrets): Promise<Record<Provider, KeyInfo>> {
+  const user = await getUserApiKeys(db, userId);
+  const out = {} as Record<Provider, KeyInfo>;
+  for (const p of ["anthropic", "openai", "gemini"] as Provider[]) {
+    const dbKey = user[p];
+    const envKey = env[KEY_ENV_NAME[p]];
+    const key = dbKey || envKey || "";
+    out[p] = { set: !!key, source: dbKey ? "db" : envKey ? "env" : null, tail: key ? key.slice(-4) : "" };
+  }
+  return out;
+}
+
+export async function setUserApiKey(db: D1Database, userId: number, provider: string, key: unknown): Promise<boolean> {
+  if (!VALID_PROVIDERS.has(provider as Provider)) return false;
+  const k = (typeof key === "string" ? key : "").trim();
+  // ゴミ入力(空・改行入り・短すぎ・長すぎ)は拒否
+  if (!k || /\s/.test(k) || k.length < 10 || k.length > 300) return false;
+  await db
+    .prepare(
+      `INSERT INTO os_api_keys (user_id, provider, key) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, provider) DO UPDATE SET key = excluded.key, updated_at = datetime('now')`
+    )
+    .bind(userId, provider, k)
+    .run();
+  return true;
+}
+
+export async function deleteUserApiKey(db: D1Database, userId: number, provider: string): Promise<boolean> {
+  const r = await db.prepare(`DELETE FROM os_api_keys WHERE user_id = ? AND provider = ?`).bind(userId, provider).run();
+  return (r.meta.changes ?? 0) > 0;
 }
 
 // ── 作業AI (os_worker_runs / os_worker_msgs) ──────────────

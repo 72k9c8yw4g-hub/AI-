@@ -465,15 +465,40 @@ function loadRuns(){
 var ROLE_JA={mentor:'メンター兼司令塔',monitor:'特命監視官',recorder:'記録官',worker:'作業AI群'};
 var DEFAULT_MODELS={anthropic:'claude-sonnet-4-20250514',openai:'gpt-4o',gemini:'gemini-2.0-flash'};
 el('setClose').onclick=function(){showScreen('chat')};
+var PROV_JA={anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',gemini:'Google (Gemini)'};
+function keyRow(p, info){
+  var box=document.createElement('div'); box.className='role';
+  var state = info.set
+    ? '✅ 接続中 (…'+esc(info.tail)+(info.source==='db'?' / ⚙️で登録':' / Cloudflare Secret')+')'
+    : '— 未接続';
+  box.innerHTML='<h4>'+esc(PROV_JA[p]||p)+' <span class="dm" style="font-weight:normal">'+state+'</span></h4>'+
+    '<div class="r"><input type="password" placeholder="APIキーを貼り付け" autocomplete="off"></div>'+
+    '<button class="save">保存</button>'+
+    (info.source==='db'?'<button class="del" style="margin-left:8px;margin-top:8px">削除</button>':'')+
+    '<span class="saved" style="display:none">保存しました</span>';
+  var inp=box.querySelector('input'), sv=box.querySelector('.saved');
+  box.querySelector('.save').onclick=function(){
+    var v=inp.value.trim();
+    if(!v){alert('APIキーを貼り付けてください');return;}
+    api('/keys',{method:'PUT',body:JSON.stringify({provider:p,key:v})}).then(function(){
+      inp.value=''; sv.style.display='inline';
+      setTimeout(function(){sv.style.display='none'},1500);
+      loadRoles(); loadStatus();
+    }).catch(function(e){alert(e.message)});
+  };
+  var del=box.querySelector('.del');
+  if(del)del.onclick=function(){
+    if(!confirm('このキーを削除しますか？'))return;
+    api('/keys',{method:'DELETE',body:JSON.stringify({provider:p})}).then(function(){loadRoles();loadStatus()}).catch(function(e){alert(e.message)});
+  };
+  return box;
+}
 function loadRoles(){
   el('roleList').innerHTML='<div class="empty2">読み込み中…</div>';
   api('/roles').then(function(d){
-    var ks=d.keys||{};
-    el('keyStatus').innerHTML='APIキー接続状況'+
-      '<br>Anthropic: '+(ks.anthropic?'✅ 接続':'— 未接続')+
-      '<br>OpenAI: '+(ks.openai?'✅ 接続':'— 未接続')+
-      '<br>Gemini: '+(ks.gemini?'✅ 接続':'— 未接続')+
-      '<br><span style="opacity:.8">未接続のプロバイダを選んだ役割はスタブ応答になります。キーは wrangler secret で設定します。</span>';
+    var ki=d.keyInfo||{};
+    var ksBox=el('keyStatus'); ksBox.innerHTML='APIキー接続状況 — キーはあなた専用の保管庫(D1)に保存され、このURLを知る本人だけが使えます。<br><span style="opacity:.8">Gemini は <b>aistudio.google.com</b> →「Get API key」で無料発行できます(AIzaSy… で始まる文字列)。プロジェクトID(gen-lang-client-…)ではありません。</span>';
+    ['gemini','anthropic','openai'].forEach(function(p){ if(ki[p]) ksBox.appendChild(keyRow(p, ki[p])); });
     var list=el('roleList'); list.innerHTML='';
     d.roles.forEach(function(r){
       var box=document.createElement('div'); box.className='role';

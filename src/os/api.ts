@@ -13,11 +13,14 @@ import {
   createChat,
   createWorkerRun,
   deleteChat,
+  deleteUserApiKey,
+  effectiveSecrets,
   finishWorkerRun,
   getChat,
   getRoleModel,
   getWorkerLog,
   getWorkerRun,
+  keyStatus,
   listChats,
   listDecisions,
   listMessages,
@@ -27,6 +30,7 @@ import {
   rejectCandidate,
   renameChat,
   setRoleModel,
+  setUserApiKey,
 } from "./db";
 
 function json(data: unknown, status = 200): Response {
@@ -38,16 +42,34 @@ export async function handleOsApi(
   req: Request,
   db: D1Database,
   userId: number,
-  secrets: LlmSecrets,
+  envSecrets: LlmSecrets,
   rest: string[],
   _url: URL
 ): Promise<Response> {
   const method = req.method;
   const head = rest[0] ?? "";
+  // env の Secret + ⚙️ で登録されたユーザーキーをマージ(以降は常にこちらを使う)
+  const secrets = await effectiveSecrets(db, userId, envSecrets);
 
   // GET /os/status … LLM 接続の有無 (UI に「モデル未接続」を出すため)
   if (head === "status" && method === "GET") {
     return json({ llm_connected: anyKeyPresent(secrets) });
+  }
+
+  // /os/keys … ⚙️ からの APIキー登録/削除 (Cloudflare Secret を触らずに接続できる)
+  if (head === "keys") {
+    if (method === "PUT") {
+      const b = (await req.json().catch(() => ({}))) as { provider?: unknown; key?: unknown };
+      const ok = await setUserApiKey(db, userId, String(b.provider ?? ""), b.key);
+      return ok
+        ? json({ ok: true })
+        : json({ error: "キーの形式が不正です(空白・改行なし、10文字以上で貼り付けてください)" }, 400);
+    }
+    if (method === "DELETE") {
+      const b = (await req.json().catch(() => ({}))) as { provider?: unknown };
+      return (await deleteUserApiKey(db, userId, String(b.provider ?? ""))) ? json({ ok: true }) : notFound();
+    }
+    return notFound();
   }
 
   if (head === "chats") {
@@ -202,13 +224,11 @@ export async function handleOsApi(
   // /os/roles … 役割別モデル設定(技術設計書 第4-5章)
   if (head === "roles") {
     if (method === "GET") {
+      const info = await keyStatus(db, userId, envSecrets);
       return json({
         roles: await listRoleModels(db, userId),
-        keys: {
-          anthropic: !!secrets.ANTHROPIC_API_KEY,
-          openai: !!secrets.OPENAI_API_KEY,
-          gemini: !!secrets.GEMINI_API_KEY,
-        },
+        keys: { anthropic: info.anthropic.set, openai: info.openai.set, gemini: info.gemini.set },
+        keyInfo: info,
       });
     }
     if (method === "PUT") {
