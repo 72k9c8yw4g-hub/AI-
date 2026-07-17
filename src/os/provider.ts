@@ -25,12 +25,21 @@ export interface ChatMsg {
   content: string;
 }
 
-// 役割ごとの既定モデル。設定画面(Phase 3)で上書きするまではこれを使う。
+// 役割ごとの既定モデル。設定画面で上書きするまではこれを使う。
 export const DEFAULT_MODELS: Record<Provider, string> = {
   anthropic: "claude-sonnet-4-20250514",
   openai: "gpt-4o",
-  gemini: "gemini-1.5-pro",
+  gemini: "gemini-2.0-flash",
 };
+
+// モデル名の自己修復。プロバイダを切り替えたのに旧プロバイダのモデル名が残っている、
+// プロジェクトIDを貼ってしまった等の設定ミスは、そのプロバイダの既定モデルに戻す。
+export function resolveModel(provider: Provider, model: string): string {
+  const m = (model || "").trim().replace(/^models\//, "");
+  const family =
+    provider === "anthropic" ? /^claude/i : provider === "openai" ? /^(gpt|o\d|chatgpt)/i : /^(gemini|gemma|learnlm)/i;
+  return m && family.test(m) ? m : DEFAULT_MODELS[provider];
+}
 
 function keyFor(p: Provider, s: LlmSecrets): string | undefined {
   return p === "anthropic" ? s.ANTHROPIC_API_KEY : p === "openai" ? s.OPENAI_API_KEY : s.GEMINI_API_KEY;

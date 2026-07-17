@@ -1,7 +1,7 @@
 // AI意思決定OS — データアクセス (チャット / メッセージ / 役割モデル設定)。
 // すべて user_id スコープ。既存 Dscribe の分離方針(ユーザーごとに完全独立)を踏襲する。
 
-import { DEFAULT_MODELS, type Provider, type RoleModel } from "./provider";
+import { resolveModel, type Provider, type RoleModel } from "./provider";
 import { saveMemory, listMemories, type MemoryRow } from "../db";
 
 export interface OsChat {
@@ -122,13 +122,14 @@ const VALID_ROLES = new Set(["mentor", "monitor", "recorder", "worker"]);
 const VALID_PROVIDERS = new Set<Provider>(["anthropic", "openai", "gemini"]);
 
 // 役割の使用モデルを取得。未設定なら既定(anthropic + 役割別既定モデル)。
+// モデル名がプロバイダと食い違う(切替時の残骸・プロジェクトID誤入力)場合は読み取り時に自己修復する。
 export async function getRoleModel(db: D1Database, userId: number, role: string): Promise<RoleModel> {
   const row = await db
     .prepare(`SELECT provider, model FROM os_role_config WHERE user_id = ? AND role = ?`)
     .bind(userId, role)
     .first<{ provider: string; model: string }>();
   const provider = (row && VALID_PROVIDERS.has(row.provider as Provider) ? row.provider : "anthropic") as Provider;
-  return { provider, model: row?.model || DEFAULT_MODELS[provider] };
+  return { provider, model: resolveModel(provider, row?.model ?? "") };
 }
 
 export async function setRoleModel(db: D1Database, userId: number, role: string, provider: string, model: string): Promise<boolean> {
