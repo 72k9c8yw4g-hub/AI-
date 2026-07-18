@@ -128,8 +128,12 @@ export async function handleOsApi(
       const mentorMsg = await addMessage(db, userId, id, "mentor", result.text);
 
       // 特命監視官: メンター応答後に横から監査。問題があれば警告を残す(独立監査・非中継)。
+      // 誤警告を防ぐため、監視官に見せる決定はこのチャットのプロジェクトのものだけに絞る
+      // (プロジェクト未分類のチャットのみ全体。無関係PJの決定を持ち出さないように)。
       let monitorMsg = null;
-      const active = await activeDecisionList(db, userId);
+      const active = chat.project
+        ? (await projectActiveDecisions(db, userId, chat.project)).map((m) => ({ id: m.id, title: m.title || m.content.slice(0, 40) }))
+        : await activeDecisionList(db, userId);
       const monRm = await getRoleModel(db, userId, "monitor");
       const withMentor = (await listMessages(db, userId, id)).slice(-30);
       const warnings = await runMonitorTurn(withMentor, active, monRm, secrets);
