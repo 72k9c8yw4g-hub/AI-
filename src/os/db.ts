@@ -516,6 +516,64 @@ export async function searchOs(db: D1Database, userId: number, query: unknown): 
   return { terms, results };
 }
 
+// ── 監視官レポート + 通知 ─────────────────────────────────
+export interface OsReport {
+  id: number;
+  chat_id: number | null;
+  content: string;
+  created_at: string;
+}
+
+export async function createReport(db: D1Database, userId: number, chatId: number | null, content: string): Promise<OsReport> {
+  const row = await db
+    .prepare(`INSERT INTO os_reports (user_id, chat_id, content) VALUES (?, ?, ?) RETURNING id, chat_id, content, created_at`)
+    .bind(userId, chatId, content)
+    .first<OsReport>();
+  if (!row) throw new Error("レポート保存に失敗しました");
+  return row;
+}
+
+export async function listReports(db: D1Database, userId: number, limit = 10): Promise<OsReport[]> {
+  const { results } = await db
+    .prepare(`SELECT id, chat_id, content, created_at FROM os_reports WHERE user_id = ? ORDER BY id DESC LIMIT ?`)
+    .bind(userId, limit)
+    .all<OsReport>();
+  return results;
+}
+
+// チャット内の監視官警告の回数(節目レポート用)
+export async function warningCounts(db: D1Database, userId: number, chatId: number): Promise<{ deviation: number; loop: number }> {
+  const row = await db
+    .prepare(
+      `SELECT
+         SUM(CASE WHEN content LIKE '%[deviation]%' THEN 1 ELSE 0 END) AS deviation,
+         SUM(CASE WHEN content LIKE '%[loop]%' THEN 1 ELSE 0 END) AS loop
+       FROM os_messages WHERE user_id = ? AND chat_id = ? AND role = 'monitor'`
+    )
+    .bind(userId, chatId)
+    .first<{ deviation: number | null; loop: number | null }>();
+  return { deviation: row?.deviation ?? 0, loop: row?.loop ?? 0 };
+}
+
+// 通知フィード(実装準備設計書 第3-4章): 承認待ち・最近の監視官警告・最近のレポートを集約。
+export interface Notifications {
+  pending: OsCandidate[];
+  warnings: { chat_id: number; content: string; created_at: string }[];
+  reports: OsReport[];
+}
+
+export async function getNotifications(db: D1Database, userId: number): Promise<Notifications> {
+  const pending = await listPendingCandidates(db, userId);
+  const { results: warnings } = await db
+    .prepare(
+      `SELECT chat_id, content, created_at FROM os_messages
+        WHERE user_id = ? AND role = 'monitor' ORDER BY id DESC LIMIT 10`
+    )
+    .bind(userId)
+    .all<{ chat_id: number; content: string; created_at: string }>();
+  return { pending, warnings, reports: await listReports(db, userId, 10) };
+}
+
 // ── エクスポート(バックアップ) ─────────────────────────────
 // 📤の全体エクスポートに OS のデータも含める。os_api_keys(秘密情報)は絶対に含めない。
 export async function exportOs(db: D1Database, userId: number) {

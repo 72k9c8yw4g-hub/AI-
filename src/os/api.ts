@@ -3,7 +3,7 @@
 
 import { anyKeyPresent, listProviderModels, type LlmSecrets, type Provider } from "./provider";
 import { lastBackupStatus, runBackup } from "./backup";
-import { runMentorTurn, runRecorderTurn, runMonitorTurn, runWorkerTask, runMentorConsolidation } from "./org";
+import { runMentorTurn, runRecorderTurn, runMonitorTurn, runMonitorReport, runWorkerTask, runMentorConsolidation } from "./org";
 import {
   activeDecisionList,
   addMessage,
@@ -14,10 +14,13 @@ import {
   consumeLlmBudget,
   createCandidate,
   createChat,
+  createReport,
   createWorkerRun,
   deleteChat,
+  getNotifications,
   listOsProjects,
   listSavedData,
+  warningCounts,
   deleteUserApiKey,
   effectiveSecrets,
   finishWorkerRun,
@@ -182,6 +185,25 @@ export async function handleOsApi(
       }
     }
 
+    // POST /os/chats/<id>/report … 監視官の節目レポートを生成(運用第6章)
+    if (action === "report" && method === "POST") {
+      const chat = await getChat(db, userId, id);
+      if (!chat) return notFound();
+      const msgs = (await listMessages(db, userId, id)).slice(-30);
+      if (!msgs.length) return json({ error: "まだ会話がありません" }, 400);
+      try {
+        await consumeLlmBudget(db, userId, 1);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 429);
+      }
+      const active = await activeDecisionList(db, userId);
+      const counts = await warningCounts(db, userId, id);
+      const rm = await getRoleModel(db, userId, "monitor");
+      const r = await runMonitorReport(msgs, active, counts, rm, secrets);
+      const report = await createReport(db, userId, id, r.text);
+      return json({ report, stub: r.stub });
+    }
+
     // POST /os/chats/<id>/propose … 記録官が会話から保存候補を生成(まだ保存しない)
     if (action === "propose" && method === "POST") {
       const chat = await getChat(db, userId, id);
@@ -264,6 +286,11 @@ export async function handleOsApi(
       return json({ active, archived, pending });
     }
     return notFound();
+  }
+
+  // GET /os/notifications … 通知フィード(承認待ち・監視官の警告・レポート) — 実装第3-4章
+  if (head === "notifications" && method === "GET") {
+    return json(await getNotifications(db, userId));
   }
 
   // GET /os/projects … プロジェクト一覧(OSチャット数・現行決定数つき) — 技術第7章/実装第10章

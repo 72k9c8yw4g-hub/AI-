@@ -96,6 +96,15 @@ const OS_STATEMENTS: string[] = [
     calls   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, day)
   )`,
+  // os_reports … 特命監視官の節目レポート(運用設計書 第6章)。議題・未解決・決定・警告回数のまとめ。
+  `CREATE TABLE IF NOT EXISTS os_reports (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    chat_id    INTEGER REFERENCES os_chats(id),
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_os_reports_user ON os_reports(user_id)`,
 ];
 
 let osSchemaReady = false;

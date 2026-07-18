@@ -163,7 +163,8 @@ body{padding-bottom:56px}
     <div class="composer">
       <button class="icon" id="proposeBtn" title="この会話から決定を記録" style="align-self:flex-end;font-size:18px">📝</button>
       <button class="icon" id="delegateBtn" title="入力を作業AIに振る" style="align-self:flex-end;font-size:18px">🛠</button>
-      <textarea id="input" rows="1" placeholder="メンターに相談…（🛠で作業AIに委任）"></textarea>
+      <button class="icon" id="reportBtn" title="監視官の節目レポート" style="align-self:flex-end;font-size:18px">📋</button>
+      <textarea id="input" rows="1" placeholder="メンターに相談…（🛠委任 / 📋監視官レポート）"></textarea>
       <button class="primary" id="sendBtn">送信</button>
     </div>
   </main>
@@ -588,6 +589,22 @@ function delegate(){
 }
 el('delegateBtn').onclick=delegate;
 
+// 📋 監視官の節目レポート
+function makeReport(){
+  if(current==null){alert('先に会話を始めてください');return;}
+  var rb=el('reportBtn'); rb.disabled=true;
+  var box=el('msgs'); if(box.querySelector('.empty'))box.innerHTML='';
+  var note=document.createElement('div'); note.className='typing'; note.id='rtyping'; note.textContent='📋 監視官がレポートを作成中…';
+  box.appendChild(note); box.scrollTop=box.scrollHeight;
+  api('/chats/'+current+'/report',{method:'POST'}).then(function(r){
+    var t=el('rtyping'); if(t)t.remove();
+    var mon=document.createElement('div'); mon.className='mon';
+    mon.innerHTML='<span class="ml">📋 特命監視官レポート</span>'+esc(r.report.content);
+    box.appendChild(mon); box.scrollTop=box.scrollHeight;
+  }).catch(function(e){var t=el('rtyping');if(t)t.remove();alert(e.message)}).then(function(){rb.disabled=false});
+}
+el('reportBtn').onclick=makeReport;
+
 el('runClose').onclick=function(){showScreen('chat')};
 function loadRuns(){
   el('runBody').innerHTML='<div class="empty2">読み込み中…</div>';
@@ -780,8 +797,8 @@ function openProject(name){
 function loadHome(){
   var body=el('homeBody');
   body.innerHTML='<div class="empty2">読み込み中…</div>';
-  Promise.all([api('/roles'),api('/decisions'),api('/chats'),api('/projects')]).then(function(rs){
-    var roles=rs[0], dec=rs[1], chats=rs[2].chats, projects=rs[3].projects;
+  Promise.all([api('/roles'),api('/decisions'),api('/chats'),api('/projects'),api('/notifications')]).then(function(rs){
+    var roles=rs[0], dec=rs[1], chats=rs[2].chats, projects=rs[3].projects, notif=rs[4];
     body.innerHTML='';
     // 1. AI稼働状況
     var sec1=document.createElement('div'); sec1.className='home-sec';
@@ -826,6 +843,23 @@ function loadHome(){
       sec4.appendChild(hrow(m.title||m.content.slice(0,40),m.created_at,function(){showScreen('dec')}));
     });
     body.appendChild(sec4);
+    // 5. 通知(監視官の警告 + 節目レポート) — 実装準備第3-4章
+    var warns=(notif.warnings||[]).filter(function(w){return /\[(deviation|loop|contradiction|drift)\]/.test(w.content)});
+    var reps=notif.reports||[];
+    var sec5=document.createElement('div'); sec5.className='home-sec';
+    sec5.innerHTML='<h3>🔔 通知（監視官）</h3>';
+    if(!warns.length&&!reps.length){var e5=document.createElement('div');e5.className='hcard';e5.style.color='var(--muted)';e5.style.fontSize='13px';e5.textContent='新しい通知はありません';sec5.appendChild(e5);}
+    reps.slice(0,3).forEach(function(r){
+      var d=document.createElement('div'); d.className='mon'; d.style.alignSelf='stretch'; d.style.maxWidth='100%'; d.style.marginBottom='8px';
+      d.innerHTML='<span class="ml">📋 節目レポート · '+esc(r.created_at)+'</span>'+esc(r.content);
+      sec5.appendChild(d);
+    });
+    warns.slice(0,4).forEach(function(w){
+      var d=document.createElement('div'); d.className='mon'; d.style.alignSelf='stretch'; d.style.maxWidth='100%'; d.style.marginBottom='8px';
+      d.innerHTML='<span class="ml">🛡 警告 · '+esc(w.created_at)+'</span>'+esc(w.content);
+      sec5.appendChild(d);
+    });
+    body.appendChild(sec5);
   }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
 }
 
