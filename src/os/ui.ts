@@ -451,7 +451,7 @@ function renderDec(tab){
 
 // ── 決定事項の詳細(実装準備設計書 第8章: 更新履歴・元チャット・関連決定) ──
 function loadDecisionDetail(id){
-  showScreen('dec');
+  activatePanel('dec');
   var body=el('decBody');
   body.innerHTML='<div class="empty2">読み込み中…</div>';
   api('/decisions/'+id).then(function(d){
@@ -686,7 +686,12 @@ function loadBackup(){
       '<div class="dm" style="margin-top:8px;line-height:1.7">自動保存を有効にするには: Cloudflare で R2 バケット <b>dscribe-backup</b> を作成 → wrangler.toml の [[r2_buckets]] のコメントを外して再デプロイ。未設定でも毎週の実行記録だけは残ります(📤の手動エクスポートは常に使えます)。</div>';
     box.innerHTML='<h4>💾 バックアップ <span class="dm" style="font-weight:normal">'+(d.enabled?'R2接続済み・毎週月曜に自動実行':'R2未設定')+'</span></h4>'+
       '<div class="dm">'+lastLine+'</div>'+setup+
-      '<button class="save" id="backupNow" style="margin-top:10px">今すぐバックアップ</button>';
+      '<button class="save" id="backupNow" style="margin-top:10px">今すぐバックアップ</button>'+
+      '<hr style="border:none;border-top:1px solid var(--line);margin:14px 0">'+
+      '<h4>♻ 復元(バックアップから)</h4>'+
+      '<div class="dm" style="margin-bottom:8px">📤でダウンロードしたJSONを選ぶと、中のチャットを<b>追記で</b>復元します(既存データは消しません・オーナーのみ)。</div>'+
+      '<input type="file" id="restoreFile" accept="application/json,.json">'+
+      '<div id="restoreMsg" class="dm" style="margin-top:8px"></div>';
     card.appendChild(box);
     el('backupNow').onclick=function(){
       el('backupNow').disabled=true; el('backupNow').textContent='実行中…';
@@ -694,6 +699,23 @@ function loadBackup(){
         alert(r.status.ok ? 'バックアップ完了: '+r.status.location : '実行結果: '+(r.status.error||'失敗'));
         loadBackup();
       }).catch(function(e){alert(e.message);loadBackup()});
+    };
+    el('restoreFile').onchange=function(){
+      var f=el('restoreFile').files[0]; if(!f)return;
+      var msg=el('restoreMsg'); msg.textContent='読み込み中…';
+      f.text().then(function(txt){
+        var backup; try{backup=JSON.parse(txt)}catch(e){msg.textContent='JSONの読み込みに失敗しました';return;}
+        api('/restore',{method:'POST',body:JSON.stringify({backup:backup})}).then(function(r){
+          var p=r.preview;
+          if(!p.found){msg.textContent='このバックアップにあなたのデータが見つかりませんでした';return;}
+          if(!confirm('復元プレビュー: チャット'+p.chats+'件 / メッセージ'+p.messages+'件を追記します。よろしいですか？')){msg.textContent='キャンセルしました';return;}
+          msg.textContent='復元中…';
+          api('/restore',{method:'POST',body:JSON.stringify({backup:backup,confirm:true})}).then(function(rr){
+            msg.textContent='✅ 復元しました: チャット'+rr.restored.chats+'件 / メッセージ'+rr.restored.messages+'件';
+            loadChats();
+          }).catch(function(e){msg.textContent='エラー: '+e.message});
+        }).catch(function(e){msg.textContent='エラー: '+e.message});
+      });
     };
   }).catch(function(){/* 非オーナー(403)は表示しない */});
 }
@@ -727,9 +749,13 @@ function loadRoles(){
 
 // ── 画面切替(ナビ: スマホ=下タブ / PC=左レール) ──
 var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel',search:'searchPanel',saved:'savedPanel'};
-function showScreen(scr){
+// パネルの表示だけ切り替える(ローダーは呼ばない)。詳細ビューが再描画レースで消えるのを防ぐ。
+function activatePanel(scr){
   Object.keys(PANELS).forEach(function(k){el(PANELS[k]).classList.toggle('open',k===scr)});
   Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){b.classList.toggle('active',b.getAttribute('data-scr')===scr)});
+}
+function showScreen(scr){
+  activatePanel(scr);
   if(scr==='home')loadHome();
   if(scr==='dec')openDecisions();
   if(scr==='runs')loadRuns();
@@ -771,14 +797,25 @@ function hrow(title,meta,onclick){
 }
 // プロジェクト詳細ビュー(技術第7章: プロジェクト→チャット群・決定・保存データ)
 function openProject(name){
-  showScreen('home');
+  activatePanel('home');
   var body=el('homeBody'); body.innerHTML='<div class="empty2">読み込み中…</div>';
-  Promise.all([api('/chats?project='+encodeURIComponent(name)),api('/decisions'),api('/saved?project='+encodeURIComponent(name))]).then(function(rs){
-    var chats=rs[0].chats, decs=(rs[1].active||[]).filter(function(m){return m.project===name}), saved=rs[2].saved;
+  Promise.all([api('/chats?project='+encodeURIComponent(name)),api('/decisions'),api('/saved?project='+encodeURIComponent(name)),api('/projects?name='+encodeURIComponent(name))]).then(function(rs){
+    var chats=rs[0].chats, decs=(rs[1].active||[]).filter(function(m){return m.project===name}), saved=rs[2].saved, st=rs[3].status||{status:'active',final_report:''};
     body.innerHTML='';
     var back=document.createElement('button'); back.textContent='← ホームに戻る'; back.style.marginBottom='12px'; back.onclick=loadHome;
     body.appendChild(back);
-    var h=document.createElement('h2'); h.textContent='📁 '+name; h.style.margin='0 0 12px'; h.style.fontSize='18px'; body.appendChild(h);
+    var h=document.createElement('h2'); h.textContent='📁 '+name+(st.status==='archived'?' ✅完了':''); h.style.margin='0 0 12px'; h.style.fontSize='18px'; body.appendChild(h);
+    // 最終報告(完了済みなら表示)
+    if(st.status==='archived'&&st.final_report){
+      var fr=document.createElement('div'); fr.className='mon'; fr.style.alignSelf='stretch'; fr.style.maxWidth='100%'; fr.style.marginBottom='12px';
+      fr.innerHTML='<span class="ml">📄 最終報告</span>'+esc(st.final_report);
+      body.appendChild(fr);
+    }
+    // 完了 / 再開ボタン(運用第9章)
+    var pbtn=document.createElement('button'); pbtn.style.width='100%'; pbtn.style.marginBottom='12px';
+    if(st.status==='archived'){ pbtn.textContent='↩ このプロジェクトを再開'; pbtn.onclick=function(){api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'reopen'})}).then(function(){openProject(name)}).catch(function(e){alert(e.message)})}; }
+    else { pbtn.className='primary'; pbtn.textContent='✅ プロジェクトを完了(最終報告を作成)'; pbtn.onclick=function(){if(!confirm('このプロジェクトを完了しますか？現行の決定から最終報告を作成します。'))return;pbtn.disabled=true;pbtn.textContent='最終報告を作成中…';api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'complete'})}).then(function(){openProject(name)}).catch(function(e){alert(e.message);pbtn.disabled=false})}; }
+    body.appendChild(pbtn);
     var s1=document.createElement('div'); s1.className='home-sec'; s1.innerHTML='<h3>チャット</h3>';
     if(!chats.length){s1.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">このプロジェクトのチャットはありません</div>';}
     chats.forEach(function(c){s1.appendChild(hrow(c.title,(c.message_count||0)+'件',function(){showScreen('chat');openChat(c.id,c.title)}))});

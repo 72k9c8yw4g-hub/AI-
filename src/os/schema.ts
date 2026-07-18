@@ -105,6 +105,15 @@ const OS_STATEMENTS: string[] = [
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_os_reports_user ON os_reports(user_id)`,
+  // os_project_status … プロジェクトの終了/アーカイブ状態と最終報告(運用設計書 第9章)
+  `CREATE TABLE IF NOT EXISTS os_project_status (
+    user_id      INTEGER NOT NULL REFERENCES users(id),
+    project_id   INTEGER NOT NULL REFERENCES projects(id),
+    status       TEXT NOT NULL DEFAULT 'active',
+    final_report TEXT NOT NULL DEFAULT '',
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, project_id)
+  )`,
 ];
 
 let osSchemaReady = false;

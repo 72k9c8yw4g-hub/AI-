@@ -2,7 +2,7 @@
 // index.ts の handleApi から head === "os" のとき委譲される。認証済み userId を受け取る。
 
 import { anyKeyPresent, listProviderModels, type LlmSecrets, type Provider } from "./provider";
-import { lastBackupStatus, runBackup } from "./backup";
+import { lastBackupStatus, previewRestore, restoreOsChats, runBackup } from "./backup";
 import { runMentorTurn, runRecorderTurn, runMonitorTurn, runMonitorReport, runWorkerTask, runMentorConsolidation } from "./org";
 import {
   activeDecisionList,
@@ -18,8 +18,11 @@ import {
   createWorkerRun,
   deleteChat,
   getNotifications,
+  getProjectStatus,
   listOsProjects,
   listSavedData,
+  projectActiveDecisions,
+  setProjectStatus,
   warningCounts,
   deleteUserApiKey,
   effectiveSecrets,
@@ -56,7 +59,8 @@ export async function handleOsApi(
   envSecrets: LlmSecrets & { BACKUP?: R2Bucket },
   rest: string[],
   url: URL,
-  isOwner = false
+  isOwner = false,
+  email = ""
 ): Promise<Response> {
   const method = req.method;
   const head = rest[0] ?? "";
@@ -293,9 +297,51 @@ export async function handleOsApi(
     return json(await getNotifications(db, userId));
   }
 
-  // GET /os/projects … プロジェクト一覧(OSチャット数・現行決定数つき) — 技術第7章/実装第10章
-  if (head === "projects" && method === "GET") {
-    return json({ projects: await listOsProjects(db, userId) });
+  // /os/projects … 一覧 / 完了・再開(運用第9章 プロジェクト終了運用)
+  if (head === "projects") {
+    if (method === "GET") {
+      const name = url.searchParams.get("name");
+      if (name) return json({ status: (await getProjectStatus(db, userId, name)) ?? { status: "active", final_report: "" } });
+      return json({ projects: await listOsProjects(db, userId) });
+    }
+    if (method === "POST") {
+      const b = (await req.json().catch(() => ({}))) as { project?: unknown; action?: unknown };
+      const project = String(b.project ?? "").trim();
+      if (!project) return json({ error: "project が必要です" }, 400);
+      if (b.action === "reopen") {
+        await setProjectStatus(db, userId, project, "active");
+        return json({ ok: true, status: "active" });
+      }
+      if (b.action === "complete") {
+        // 終了時処理: 現行決定をメンターが最終報告に整理してアーカイブ
+        const decs = await projectActiveDecisions(db, userId, project);
+        let report = "(このプロジェクトには確定した決定がありません)";
+        if (decs.length) {
+          try {
+            await consumeLlmBudget(db, userId, 1);
+          } catch (e) {
+            return json({ error: e instanceof Error ? e.message : String(e) }, 429);
+          }
+          const decText = decs.map((d) => `- ${d.title || d.content.slice(0, 40)}`).join("\n");
+          const mrm = await getRoleModel(db, userId, "mentor");
+          const cons = await runMentorConsolidation(`プロジェクト「${project}」の最終報告`, decText, mrm, secrets);
+          report = cons.text;
+        }
+        await setProjectStatus(db, userId, project, "archived", report);
+        return json({ ok: true, status: "archived", final_report: report });
+      }
+      return json({ error: "action は complete / reopen" }, 400);
+    }
+    return notFound();
+  }
+
+  // /os/restore … バックアップJSONから復元(オーナー限定・追記のみ・確認つき) — 実装第19章
+  if (head === "restore" && method === "POST") {
+    if (!isOwner) return json({ error: "オーナーのみ実行できます" }, 403);
+    const b = (await req.json().catch(() => ({}))) as { backup?: unknown; confirm?: unknown };
+    if (!b.backup) return json({ error: "バックアップJSONがありません" }, 400);
+    if (b.confirm !== true) return json({ preview: previewRestore(b.backup, email) });
+    return json({ ok: true, restored: await restoreOsChats(db, userId, email, b.backup) });
   }
 
   // GET /os/saved … 保存データ(決定以外の記録: memory / note) — 実装準備第3章

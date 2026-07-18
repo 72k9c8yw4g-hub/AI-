@@ -93,7 +93,7 @@ export async function assignChatProject(db: D1Database, userId: number, chatId: 
   return (r.meta.changes ?? 0) > 0;
 }
 
-// OS視点のプロジェクト一覧: Dscribe のプロジェクトに、OSチャット数と現行決定数を足す。
+// OS視点のプロジェクト一覧: Dscribe のプロジェクトに、OSチャット数・現行決定数・完了状態を足す。
 export async function listOsProjects(db: D1Database, userId: number) {
   const base = await listProjects(db, userId);
   const { results: chatCounts } = await db
@@ -107,9 +107,48 @@ export async function listOsProjects(db: D1Database, userId: number) {
     )
     .bind(userId)
     .all<{ name: string; cnt: number }>();
+  const { results: statuses } = await db
+    .prepare(`SELECT p.name AS name, s.status AS status FROM os_project_status s JOIN projects p ON p.id = s.project_id WHERE s.user_id = ?`)
+    .bind(userId)
+    .all<{ name: string; status: string }>();
   const chatMap = new Map(chatCounts.map((r) => [r.name, r.cnt]));
   const decMap = new Map(decCounts.map((r) => [r.name, r.cnt]));
-  return base.map((p) => ({ ...p, os_chats: chatMap.get(p.name) ?? 0, active_decisions: decMap.get(p.name) ?? 0 }));
+  const statMap = new Map(statuses.map((r) => [r.name, r.status]));
+  return base.map((p) => ({
+    ...p,
+    os_chats: chatMap.get(p.name) ?? 0,
+    active_decisions: decMap.get(p.name) ?? 0,
+    status: statMap.get(p.name) ?? "active",
+  }));
+}
+
+// プロジェクトの完了(アーカイブ)/再開。運用設計書 第9章の終了運用。
+export async function setProjectStatus(db: D1Database, userId: number, project: unknown, status: "active" | "archived", finalReport = ""): Promise<boolean> {
+  const projectId = await ensureProject(db, userId, project);
+  if (!projectId) return false;
+  await db
+    .prepare(
+      `INSERT INTO os_project_status (user_id, project_id, status, final_report) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, project_id) DO UPDATE SET status = excluded.status,
+         final_report = CASE WHEN excluded.final_report != '' THEN excluded.final_report ELSE os_project_status.final_report END,
+         updated_at = datetime('now')`
+    )
+    .bind(userId, projectId, status, finalReport)
+    .run();
+  return true;
+}
+
+export async function getProjectStatus(db: D1Database, userId: number, project: string): Promise<{ status: string; final_report: string } | null> {
+  return db
+    .prepare(`SELECT s.status, s.final_report FROM os_project_status s JOIN projects p ON p.id = s.project_id WHERE s.user_id = ? AND p.name = ?`)
+    .bind(userId, project)
+    .first<{ status: string; final_report: string }>();
+}
+
+// プロジェクトの現行決定(最終報告の材料)
+export async function projectActiveDecisions(db: D1Database, userId: number, project: string): Promise<MemoryRow[]> {
+  const all = await listMemories(db, userId, { kind: "decision", project, limit: 200, activeOnly: true });
+  return all;
 }
 
 // 保存データ(決定以外の記録: memory / note)。実装準備設計書 第3章「保存データ」画面。
