@@ -364,9 +364,21 @@ function renderCandidate(c){
 }
 function decide(card,cid,act){
   var btns=card.querySelectorAll('button'); Array.prototype.forEach.call(btns,function(b){b.disabled=true});
-  api('/candidates/'+cid+'/'+act,{method:'POST'}).then(function(){
+  api('/candidates/'+cid+'/'+act,{method:'POST'}).then(function(r){
     card.classList.add('done');
-    card.innerHTML = act==='approve' ? '<div class="ch">✅ 決定事項に保存しました (Active)</div>' : '<div class="ch">🚫 却下しました</div>';
+    if(act!=='approve'){ card.innerHTML='<div class="ch">🚫 却下しました</div>'; return; }
+    card.innerHTML='<div class="ch">✅ 決定事項に保存しました (Active)</div>';
+    // 憲法 Rule 4: 決定したらすぐ実行に落とせるように
+    if(r.memory&&r.memory.id){
+      var tb=document.createElement('button'); tb.className='approve'; tb.style.marginTop='8px'; tb.textContent='▶ 実行タスクにする';
+      tb.onclick=function(){
+        tb.disabled=true; tb.textContent='作成中…';
+        api('/decisions/'+r.memory.id+'/task',{method:'POST'}).then(function(tr){
+          tb.textContent='✅ タスク作成: '+tr.task.title;
+        }).catch(function(e){alert(e.message);tb.disabled=false;tb.textContent='▶ 実行タスクにする'});
+      };
+      card.appendChild(tb);
+    }
   }).catch(function(e){alert(e.message);Array.prototype.forEach.call(btns,function(b){b.disabled=false})});
 }
 function propose(){
@@ -464,6 +476,27 @@ function loadDecisionDetail(id){
       sec2.appendChild(hrow('💬 '+sc.title, sc.candidate_created_at, function(){showScreen('chat');openChat(sc.chat_id, sc.title)}));
     } else {var e2=document.createElement('div');e2.className='hcard';e2.style.color='var(--muted)';e2.style.fontSize='13px';e2.textContent='元チャットの記録はありません(会話以外から保存された決定)';sec2.appendChild(e2);}
     body.appendChild(sec2);
+    // 実行タスク(憲法 Rule 4: アイデアより実行)
+    var sec4=document.createElement('div'); sec4.className='home-sec';
+    sec4.innerHTML='<h3>実行タスク</h3>';
+    (d.tasks||[]).forEach(function(t){
+      var mark = t.status==='done' ? '✅ ' : '⬜ ';
+      sec4.appendChild(hrow(mark+t.title, t.status + (t.due_date?' / 期限 '+t.due_date:''), null));
+    });
+    var tbtn=document.createElement('button'); tbtn.className='primary'; tbtn.textContent='▶ この決定をタスクにする';
+    tbtn.style.width='100%'; tbtn.style.marginTop='4px';
+    tbtn.onclick=function(){
+      tbtn.disabled=true; tbtn.textContent='作成中…';
+      api('/decisions/'+id+'/task',{method:'POST'}).then(function(r){
+        tbtn.textContent='✅ タスクを作成しました('+esc(r.task.title)+')';
+        loadDecisionDetail(id);
+      }).catch(function(e){alert(e.message);tbtn.disabled=false;tbtn.textContent='▶ この決定をタスクにする'});
+    };
+    sec4.appendChild(tbtn);
+    var note=document.createElement('div'); note.className='dm'; note.style.marginTop='6px';
+    note.textContent='タスクは Dscribe(記録ダッシュボード / Claude の list_tasks)と共有されます';
+    sec4.appendChild(note);
+    body.appendChild(sec4);
     // 関連決定
     if(d.related.length){
       var sec3=document.createElement('div'); sec3.className='home-sec';
