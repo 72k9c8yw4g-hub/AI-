@@ -265,6 +265,42 @@ export const WARNING_LABEL: Record<WarningType, string> = {
   drift: "目的離脱",
 };
 
+// 監視官の節目レポート(運用第6章)。議題・未解決事項・決定事項・警告回数をまとめる。
+export const REPORT_SYSTEM = `あなたは「AI意思決定OS」の特命監視官です。会話の節目のレポートを作成します。
+次の見出しで簡潔にまとめてください(各1〜3行、事実ベース。決定も指示もしない):
+【現在の議題】
+【未解決の論点】
+【確定した決定事項】
+【逸脱・ループの傾向】
+過度に長くしない。分からない項目は「特になし」と書く。`;
+
+export interface ReportCounts {
+  deviation: number;
+  loop: number;
+}
+
+export async function runMonitorReport(
+  msgs: StoredMsg[],
+  active: ActiveDecision[],
+  counts: ReportCounts,
+  rm: RoleModel,
+  secrets: LlmSecrets
+): Promise<LlmResult> {
+  const system = `${REPORT_SYSTEM}\n\n${activeDecisionsText(active)}\n\nこれまでの警告回数: 話題逸脱 ${counts.deviation}回 / ループ ${counts.loop}回`;
+  const input: ChatMsg[] = [{ role: "user", content: `次の会話の節目レポートを作成してください:\n\n${transcript(msgs)}` }];
+  const res = await callLLM(system, input, rm, secrets);
+  if (res.stub) {
+    const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+    const text =
+      `【現在の議題】${lastUser ? lastUser.content.slice(0, 40) : "特になし"}\n` +
+      `【未解決の論点】(スタブ) LLM接続後に自動要約されます\n` +
+      `【確定した決定事項】${active.length ? active.map((d) => d.title).slice(0, 3).join(" / ") : "特になし"}\n` +
+      `【逸脱・ループの傾向】話題逸脱 ${counts.deviation}回 / ループ ${counts.loop}回`;
+    return { text, stub: true };
+  }
+  return res;
+}
+
 // ── 作業AI群 ────────────────────────────────────────────
 // 憲法第9章/運用第7章: 実行部隊。作業AI同士で議論し結論に収束。成果物は直接ユーザーに
 // 出さず、メンターが検証・整理してから提示する。ループ防止のためターン数は固定で上限する。
