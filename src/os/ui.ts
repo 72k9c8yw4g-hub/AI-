@@ -203,10 +203,21 @@ body{padding-bottom:56px}
     <div id="searchBody"><div class="empty2">キーワードを入れて検索してください。</div></div>
   </div>
 </div>
+<div class="panel" id="savedPanel">
+  <div class="panel-h"><b>📚 保存データ</b><button id="savedClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-body">
+    <div class="r" style="display:flex;gap:8px;margin-bottom:14px">
+      <input id="savedInput" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit" placeholder="保存データを検索(記憶・メモ)">
+      <button class="primary" id="savedBtn">検索</button>
+    </div>
+    <div id="savedBody"></div>
+  </div>
+</div>
 <nav id="osnav">
   <button data-scr="home">🏠<span>ホーム</span></button>
   <button data-scr="chat">💬<span>チャット</span></button>
   <button data-scr="dec">📌<span>決定</span></button>
+  <button data-scr="saved">📚<span>保存</span></button>
   <button data-scr="search">🔍<span>検索</span></button>
   <button data-scr="runs">🗂<span>AI会話</span></button>
   <button data-scr="set">⚙️<span>設定</span></button>
@@ -249,11 +260,14 @@ function loadChats(){
     d.chats.forEach(function(c){
       var div=document.createElement('div');
       div.className='chatitem'+(c.id===current?' active':'');
-      div.innerHTML='<div class="t">'+esc(c.title)+'<div class="cnt">'+(c.message_count||0)+' メッセージ</div></div>';
+      var proj = c.project ? '📁'+esc(c.project) : '📁 未分類';
+      div.innerHTML='<div class="t">'+esc(c.title)+'<div class="cnt">'+(c.message_count||0)+' メッセージ · '+proj+'</div></div>';
+      var pj=document.createElement('button'); pj.className='del'; pj.textContent='📁'; pj.title='プロジェクトに割り当て';
+      pj.onclick=function(e){e.stopPropagation();var name=prompt('プロジェクト名(空欄で未分類に戻す)',c.project||'');if(name===null)return;api('/chats/'+c.id,{method:'PATCH',body:JSON.stringify({project:name})}).then(function(){loadChats()}).catch(function(err){alert(err.message)})};
       var del=document.createElement('button'); del.className='del'; del.textContent='🗑';
       del.onclick=function(e){e.stopPropagation();if(confirm('この会話を削除しますか？'))api('/chats/'+c.id,{method:'DELETE'}).then(function(){if(current===c.id){current=null;renderMessages([]);el('subtitle').textContent='メンターと議論する'}loadChats()})};
       div.querySelector('.t').onclick=function(){openChat(c.id,c.title)};
-      div.appendChild(del);
+      div.appendChild(pj); div.appendChild(del);
       list.appendChild(div);
     });
     return d.chats;
@@ -695,7 +709,7 @@ function loadRoles(){
 }
 
 // ── 画面切替(ナビ: スマホ=下タブ / PC=左レール) ──
-var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel',search:'searchPanel'};
+var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel',search:'searchPanel',saved:'savedPanel'};
 function showScreen(scr){
   Object.keys(PANELS).forEach(function(k){el(PANELS[k]).classList.toggle('open',k===scr)});
   Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){b.classList.toggle('active',b.getAttribute('data-scr')===scr)});
@@ -703,8 +717,30 @@ function showScreen(scr){
   if(scr==='dec')openDecisions();
   if(scr==='runs')loadRuns();
   if(scr==='set')loadRoles();
+  if(scr==='saved')loadSaved();
   if(scr==='search')setTimeout(function(){el('searchInput').focus()},50);
 }
+el('savedClose').onclick=function(){showScreen('chat')};
+function renderMemCard(m, box){
+  var d=document.createElement('div'); d.className='dec';
+  var kindJa = m.kind==='note'?'📝 メモ':'💭 記憶';
+  d.innerHTML='<span class="badge active">'+kindJa+'</span><span class="dm">'+esc(m.created_at||'')+(m.project?' / '+esc(m.project):'')+'</span>'+
+    (m.title?'<div class="dt">'+esc(m.title)+'</div>':'')+
+    '<div class="db">'+esc(m.content||'')+'</div>'+
+    (m.tags?'<div class="dm" style="margin-top:6px">#'+esc(m.tags).split(',').join(' #')+'</div>':'');
+  box.appendChild(d);
+}
+function loadSaved(){
+  var body=el('savedBody'); body.innerHTML='<div class="empty2">読み込み中…</div>';
+  var q=el('savedInput').value.trim();
+  api('/saved'+(q?'?q='+encodeURIComponent(q):'')).then(function(d){
+    body.innerHTML='';
+    if(!d.saved.length){body.innerHTML='<div class="empty2">保存データはまだありません。<br>会話で決定以外の記憶・メモ(kind=memory / note)が保存されるとここに出ます。</div>';return;}
+    d.saved.forEach(function(m){renderMemCard(m, body)});
+  }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
+}
+el('savedBtn').onclick=loadSaved;
+el('savedInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();loadSaved()}});
 Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){
   b.onclick=function(){showScreen(b.getAttribute('data-scr'))};
 });
@@ -716,11 +752,36 @@ function hrow(title,meta,onclick){
   if(onclick){d.style.cursor='pointer';d.onclick=onclick}
   return d;
 }
+// プロジェクト詳細ビュー(技術第7章: プロジェクト→チャット群・決定・保存データ)
+function openProject(name){
+  showScreen('home');
+  var body=el('homeBody'); body.innerHTML='<div class="empty2">読み込み中…</div>';
+  Promise.all([api('/chats?project='+encodeURIComponent(name)),api('/decisions'),api('/saved?project='+encodeURIComponent(name))]).then(function(rs){
+    var chats=rs[0].chats, decs=(rs[1].active||[]).filter(function(m){return m.project===name}), saved=rs[2].saved;
+    body.innerHTML='';
+    var back=document.createElement('button'); back.textContent='← ホームに戻る'; back.style.marginBottom='12px'; back.onclick=loadHome;
+    body.appendChild(back);
+    var h=document.createElement('h2'); h.textContent='📁 '+name; h.style.margin='0 0 12px'; h.style.fontSize='18px'; body.appendChild(h);
+    var s1=document.createElement('div'); s1.className='home-sec'; s1.innerHTML='<h3>チャット</h3>';
+    if(!chats.length){s1.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">このプロジェクトのチャットはありません</div>';}
+    chats.forEach(function(c){s1.appendChild(hrow(c.title,(c.message_count||0)+'件',function(){showScreen('chat');openChat(c.id,c.title)}))});
+    body.appendChild(s1);
+    var s2=document.createElement('div'); s2.className='home-sec'; s2.innerHTML='<h3>現行の決定事項</h3>';
+    if(!decs.length){s2.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">決定はありません</div>';}
+    decs.forEach(function(m){s2.appendChild(hrow(m.title||m.content.slice(0,40),m.created_at,function(){loadDecisionDetail(m.id)}))});
+    body.appendChild(s2);
+    var s3=document.createElement('div'); s3.className='home-sec'; s3.innerHTML='<h3>保存データ</h3>';
+    if(!saved.length){s3.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">保存データはありません</div>';}
+    saved.forEach(function(m){renderMemCard(m, s3)});
+    body.appendChild(s3);
+  }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
+}
+
 function loadHome(){
   var body=el('homeBody');
   body.innerHTML='<div class="empty2">読み込み中…</div>';
-  Promise.all([api('/roles'),api('/decisions'),api('/chats')]).then(function(rs){
-    var roles=rs[0], dec=rs[1], chats=rs[2].chats;
+  Promise.all([api('/roles'),api('/decisions'),api('/chats'),api('/projects')]).then(function(rs){
+    var roles=rs[0], dec=rs[1], chats=rs[2].chats, projects=rs[3].projects;
     body.innerHTML='';
     // 1. AI稼働状況
     var sec1=document.createElement('div'); sec1.className='home-sec';
@@ -740,6 +801,15 @@ function loadHome(){
     if(!dec.pending.length){var e2=document.createElement('div');e2.className='hcard';e2.style.color='var(--muted)';e2.style.fontSize='13px';e2.textContent='承認待ちはありません';sec2.appendChild(e2);}
     dec.pending.forEach(function(c){var cd=document.createElement('div');cd.className='card';cd.innerHTML=cardHtml(c);wireCard(cd,c);sec2.appendChild(cd)});
     body.appendChild(sec2);
+    // 2.5 プロジェクト(実装準備設計書 第4章: ホームにプロジェクト一覧)
+    if(projects&&projects.length){
+      var secP=document.createElement('div'); secP.className='home-sec';
+      secP.innerHTML='<h3>プロジェクト</h3>';
+      projects.forEach(function(p){
+        secP.appendChild(hrow('📁 '+p.name, (p.os_chats||0)+'会話 / 決定'+(p.active_decisions||0), function(){openProject(p.name)}));
+      });
+      body.appendChild(secP);
+    }
     // 3. 最近のチャット
     var sec3=document.createElement('div'); sec3.className='home-sec';
     sec3.innerHTML='<h3>最近のチャット</h3>';

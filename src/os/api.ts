@@ -9,12 +9,15 @@ import {
   addMessage,
   addWorkerMsg,
   approveCandidate,
+  assignChatProject,
   autoTitleIfNeeded,
   consumeLlmBudget,
   createCandidate,
   createChat,
   createWorkerRun,
   deleteChat,
+  listOsProjects,
+  listSavedData,
   deleteUserApiKey,
   effectiveSecrets,
   finishWorkerRun,
@@ -81,10 +84,10 @@ export async function handleOsApi(
   if (head === "chats") {
     // /os/chats
     if (!rest[1]) {
-      if (method === "GET") return json({ chats: await listChats(db, userId) });
+      if (method === "GET") return json({ chats: await listChats(db, userId, url.searchParams.get("project") ?? undefined) });
       if (method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as { title?: unknown };
-        return json({ chat: await createChat(db, userId, body.title) }, 201);
+        const body = (await req.json().catch(() => ({}))) as { title?: unknown; project?: unknown };
+        return json({ chat: await createChat(db, userId, body.title, body.project) }, 201);
       }
       return notFound();
     }
@@ -194,7 +197,8 @@ export async function handleOsApi(
       const rm = await getRoleModel(db, userId, "recorder");
       const r = await runRecorderTurn(msgs, active, rm, secrets);
       if (!r.save || !r.candidate) return json({ save: false, stub: r.stub });
-      const candidate = await createCandidate(db, userId, id, r.candidate);
+      // 候補は元チャットのプロジェクトを引き継ぐ(承認後の決定がそのPJに属するように)
+      const candidate = await createCandidate(db, userId, id, { ...r.candidate, project: chat.project ?? "" });
       return json({ save: true, candidate, stub: r.stub });
     }
 
@@ -205,10 +209,13 @@ export async function handleOsApi(
         if (!chat) return notFound();
         return json({ chat, messages: await listMessages(db, userId, id) });
       }
-      // PATCH … リネーム
+      // PATCH … リネーム / プロジェクト割り当て
       if (method === "PATCH") {
-        const body = (await req.json().catch(() => ({}))) as { title?: unknown };
-        return (await renameChat(db, userId, id, body.title)) ? json({ ok: true }) : notFound();
+        const body = (await req.json().catch(() => ({}))) as { title?: unknown; project?: unknown };
+        let ok = false;
+        if (body.project !== undefined) ok = (await assignChatProject(db, userId, id, body.project)) || ok;
+        if (typeof body.title === "string") ok = (await renameChat(db, userId, id, body.title)) || ok;
+        return ok ? json({ ok: true }) : notFound();
       }
       // DELETE
       if (method === "DELETE") {
@@ -257,6 +264,21 @@ export async function handleOsApi(
       return json({ active, archived, pending });
     }
     return notFound();
+  }
+
+  // GET /os/projects … プロジェクト一覧(OSチャット数・現行決定数つき) — 技術第7章/実装第10章
+  if (head === "projects" && method === "GET") {
+    return json({ projects: await listOsProjects(db, userId) });
+  }
+
+  // GET /os/saved … 保存データ(決定以外の記録: memory / note) — 実装準備第3章
+  if (head === "saved" && method === "GET") {
+    return json({
+      saved: await listSavedData(db, userId, {
+        project: url.searchParams.get("project") ?? undefined,
+        q: url.searchParams.get("q") ?? undefined,
+      }),
+    });
   }
 
   // GET /os/search?q=… … OS内の横断検索(チャット・決定・AI会話ログ) — 実装準備第12章

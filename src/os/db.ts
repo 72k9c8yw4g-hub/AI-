@@ -13,6 +13,8 @@ import {
   setSetting,
   genToken,
   createTask,
+  ensureProject,
+  listProjects,
   type MemoryRow,
   type TaskRow,
 } from "../db";
@@ -21,6 +23,7 @@ export interface OsChat {
   id: number;
   title: string;
   project_id: number | null;
+  project?: string | null;
   created_at: string;
   updated_at: string;
   message_count?: number;
@@ -35,36 +38,103 @@ export interface OsMessage {
   seq: number;
 }
 
-// チャット一覧 (更新が新しい順)。メッセージ件数つき。
-export async function listChats(db: D1Database, userId: number): Promise<OsChat[]> {
+// チャット一覧 (更新が新しい順)。メッセージ件数・プロジェクト名つき。project 指定でそのPJに絞る。
+export async function listChats(db: D1Database, userId: number, project?: string): Promise<OsChat[]> {
+  const conds = ["c.user_id = ?"];
+  const binds: unknown[] = [userId];
+  if (project) {
+    conds.push("p.name = ?");
+    binds.push(project);
+  }
   const { results } = await db
     .prepare(
-      `SELECT c.id, c.title, c.project_id, c.created_at, c.updated_at,
+      `SELECT c.id, c.title, c.project_id, p.name AS project, c.created_at, c.updated_at,
               (SELECT COUNT(*) FROM os_messages m WHERE m.chat_id = c.id) AS message_count
-         FROM os_chats c
-        WHERE c.user_id = ?
+         FROM os_chats c LEFT JOIN projects p ON p.id = c.project_id
+        WHERE ${conds.join(" AND ")}
         ORDER BY c.updated_at DESC, c.id DESC`
     )
-    .bind(userId)
+    .bind(...binds)
     .all<OsChat>();
   return results;
 }
 
 export async function getChat(db: D1Database, userId: number, id: number): Promise<OsChat | null> {
   return db
-    .prepare(`SELECT id, title, project_id, created_at, updated_at FROM os_chats WHERE id = ? AND user_id = ?`)
+    .prepare(
+      `SELECT c.id, c.title, c.project_id, p.name AS project, c.created_at, c.updated_at
+         FROM os_chats c LEFT JOIN projects p ON p.id = c.project_id
+        WHERE c.id = ? AND c.user_id = ?`
+    )
     .bind(id, userId)
     .first<OsChat>();
 }
 
-export async function createChat(db: D1Database, userId: number, title?: unknown): Promise<OsChat> {
+export async function createChat(db: D1Database, userId: number, title?: unknown, project?: unknown): Promise<OsChat> {
   const t = (typeof title === "string" ? title : "").trim().slice(0, 120) || "新しい会話";
+  const projectId = await ensureProject(db, userId, project);
   const row = await db
-    .prepare(`INSERT INTO os_chats (user_id, title) VALUES (?, ?) RETURNING id, title, project_id, created_at, updated_at`)
-    .bind(userId, t)
+    .prepare(`INSERT INTO os_chats (user_id, title, project_id) VALUES (?, ?, ?) RETURNING id, title, project_id, created_at, updated_at`)
+    .bind(userId, t, projectId)
     .first<OsChat>();
   if (!row) throw new Error("チャット作成に失敗しました");
   return row;
+}
+
+// チャットをプロジェクトに割り当てる(空文字で外す)。技術設計書 第7章: プロジェクト→チャット群
+export async function assignChatProject(db: D1Database, userId: number, chatId: number, project: unknown): Promise<boolean> {
+  const chat = await getChat(db, userId, chatId);
+  if (!chat) return false;
+  const projectId = await ensureProject(db, userId, project);
+  const r = await db
+    .prepare(`UPDATE os_chats SET project_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
+    .bind(projectId, chatId, userId)
+    .run();
+  return (r.meta.changes ?? 0) > 0;
+}
+
+// OS視点のプロジェクト一覧: Dscribe のプロジェクトに、OSチャット数と現行決定数を足す。
+export async function listOsProjects(db: D1Database, userId: number) {
+  const base = await listProjects(db, userId);
+  const { results: chatCounts } = await db
+    .prepare(`SELECT p.name AS name, COUNT(c.id) AS cnt FROM os_chats c JOIN projects p ON p.id = c.project_id WHERE c.user_id = ? GROUP BY p.name`)
+    .bind(userId)
+    .all<{ name: string; cnt: number }>();
+  const { results: decCounts } = await db
+    .prepare(
+      `SELECT p.name AS name, COUNT(m.id) AS cnt FROM memories m JOIN projects p ON p.id = m.project_id
+        WHERE m.user_id = ? AND m.kind = 'decision' AND m.superseded_by_id IS NULL GROUP BY p.name`
+    )
+    .bind(userId)
+    .all<{ name: string; cnt: number }>();
+  const chatMap = new Map(chatCounts.map((r) => [r.name, r.cnt]));
+  const decMap = new Map(decCounts.map((r) => [r.name, r.cnt]));
+  return base.map((p) => ({ ...p, os_chats: chatMap.get(p.name) ?? 0, active_decisions: decMap.get(p.name) ?? 0 }));
+}
+
+// 保存データ(決定以外の記録: memory / note)。実装準備設計書 第3章「保存データ」画面。
+export async function listSavedData(db: D1Database, userId: number, opts: { project?: string; q?: string } = {}): Promise<MemoryRow[]> {
+  const conds = ["m.user_id = ?", "m.kind IN ('memory','note')", "m.superseded_by_id IS NULL"];
+  const binds: unknown[] = [userId];
+  if (opts.project) {
+    conds.push("p.name = ?");
+    binds.push(opts.project);
+  }
+  const terms = splitTerms(opts.q ?? "");
+  for (const t of terms) {
+    conds.push("(m.title LIKE ? ESCAPE '\\' OR m.content LIKE ? ESCAPE '\\' OR m.tags LIKE ? ESCAPE '\\')");
+    binds.push(`%${likeEscape(t)}%`, `%${likeEscape(t)}%`, `%${likeEscape(t)}%`);
+  }
+  const { results } = await db
+    .prepare(
+      `SELECT m.id, m.kind, m.title, m.content, m.tags, m.source, p.name AS project, m.created_at,
+              m.supersedes_id, m.superseded_by_id, m.supersede_reason
+         FROM memories m LEFT JOIN projects p ON p.id = m.project_id
+        WHERE ${conds.join(" AND ")} ORDER BY m.id DESC LIMIT 100`
+    )
+    .bind(...binds)
+    .all<MemoryRow>();
+  return results;
 }
 
 export async function renameChat(db: D1Database, userId: number, id: number, title: unknown): Promise<boolean> {
