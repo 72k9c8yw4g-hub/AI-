@@ -75,3 +75,86 @@ export async function lastBackupStatus(db: D1Database): Promise<BackupStatus | n
     return null;
   }
 }
+
+// ── パージ (技術設計書 第11章) ────────────────────────────
+// 50日以上更新のないチャットの AI会話ログ(作業AIの議論)をパージする。
+// 決定事項(memories)・チャット本体・保存候補は絶対に削除しない。
+export async function purgeOldAiLogs(db: D1Database, days = 50): Promise<number> {
+  const cutoff = `-${days} days`;
+  // 対象: 更新が古いチャットに紐づく worker_runs
+  const { results: runs } = await db
+    .prepare(
+      `SELECT r.id FROM os_worker_runs r JOIN os_chats c ON c.id = r.chat_id
+        WHERE c.updated_at < datetime('now', ?)`
+    )
+    .bind(cutoff)
+    .all<{ id: number }>();
+  let purged = 0;
+  for (const r of runs) {
+    await db.prepare(`DELETE FROM os_worker_msgs WHERE run_id = ?`).bind(r.id).run();
+    await db.prepare(`DELETE FROM os_worker_runs WHERE id = ?`).bind(r.id).run();
+    purged++;
+  }
+  return purged;
+}
+
+// ── 復元 (実装準備設計書 第19章) ──────────────────────────
+// バックアップJSONから、このユーザーの OS チャットを「追記」で復元する。
+// 安全側に振る: 既存データを上書き・削除しない(常に新規チャットとして作る)。
+// 決定・記憶は supersedes チェーンの整合が難しいためこの版では対象外(チャットのみ)。
+export interface RestorePreview {
+  found: boolean;
+  email: string;
+  chats: number;
+  messages: number;
+}
+
+interface BackupUser {
+  email?: string;
+  os?: {
+    chats?: Array<{ id: number; title: string }>;
+    messages?: Array<{ chat_id: number; role: string; name: string; content: string; seq: number }>;
+  };
+}
+
+function pickUser(backup: unknown, email: string): BackupUser | null {
+  const users = (backup as { users?: BackupUser[] })?.users;
+  if (!Array.isArray(users)) return null;
+  return users.find((u) => u.email === email) ?? (users.length === 1 ? users[0] : null);
+}
+
+export function previewRestore(backup: unknown, email: string): RestorePreview {
+  const u = pickUser(backup, email);
+  if (!u || !u.os) return { found: false, email, chats: 0, messages: 0 };
+  return { found: true, email: u.email ?? email, chats: u.os.chats?.length ?? 0, messages: u.os.messages?.length ?? 0 };
+}
+
+export async function restoreOsChats(db: D1Database, userId: number, email: string, backup: unknown): Promise<{ chats: number; messages: number }> {
+  const u = pickUser(backup, email);
+  if (!u || !u.os || !u.os.chats) return { chats: 0, messages: 0 };
+  const msgsByChat = new Map<number, NonNullable<BackupUser["os"]>["messages"]>();
+  for (const m of u.os.messages ?? []) {
+    const arr = msgsByChat.get(m.chat_id) ?? [];
+    arr!.push(m);
+    msgsByChat.set(m.chat_id, arr);
+  }
+  let chats = 0;
+  let messages = 0;
+  for (const c of u.os.chats) {
+    const row = await db
+      .prepare(`INSERT INTO os_chats (user_id, title) VALUES (?, ?) RETURNING id`)
+      .bind(userId, `[復元] ${(c.title || "会話").slice(0, 110)}`)
+      .first<{ id: number }>();
+    if (!row) continue;
+    chats++;
+    const msgs = (msgsByChat.get(c.id) ?? []).sort((a, b) => a.seq - b.seq);
+    for (const m of msgs) {
+      await db
+        .prepare(`INSERT INTO os_messages (chat_id, user_id, role, name, content, seq) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(row.id, userId, m.role, m.name ?? "", (m.content ?? "").slice(0, 8000), m.seq ?? 0)
+        .run();
+      messages++;
+    }
+  }
+  return { chats, messages };
+}

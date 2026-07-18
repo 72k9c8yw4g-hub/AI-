@@ -311,7 +311,7 @@ async function handleApi(req: Request, env: Env, user: UserRow, rest: string[], 
 
   // /os/… … AI意思決定OS (チャット + メンター)
   if (head === "os") {
-    return handleOsApi(req, db, uid, env, rest.slice(1), url, !!user.is_owner);
+    return handleOsApi(req, db, uid, env, rest.slice(1), url, !!user.is_owner, user.email);
   }
 
   return notFound();
@@ -420,11 +420,12 @@ export default {
     return notFound();
   },
 
-  // 週1回の自動バックアップ(wrangler.toml の [triggers] crons)。R2未設定でも安全に完了する。
+  // 週1回の自動バックアップ + 古いAI会話ログのパージ(wrangler.toml の [triggers] crons)。
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await ensureSchema(env.DB);
     await ensureOsSchema(env.DB);
-    const { runBackup } = await import("./os/backup");
+    const { runBackup, purgeOldAiLogs } = await import("./os/backup");
     await runBackup(env.DB, env.BACKUP);
+    await purgeOldAiLogs(env.DB, 50); // 50日非稼働チャットのAI会話ログを削除(決定は残す)
   },
 } satisfies ExportedHandler<Env>;
