@@ -12,7 +12,9 @@ import {
   getSetting,
   setSetting,
   genToken,
+  createTask,
   type MemoryRow,
+  type TaskRow,
 } from "../db";
 
 export interface OsChat {
@@ -282,6 +284,7 @@ export interface DecisionDetail {
   chain: { id: number; title: string; content: string; created_at: string; reason: string | null; current: boolean }[];
   sourceChat: { chat_id: number; title: string; candidate_created_at: string } | null;
   related: { id: number; title: string; status: "active" | "archived" }[];
+  tasks: TaskRow[];
 }
 
 export async function getDecisionDetail(db: D1Database, userId: number, id: number): Promise<DecisionDetail | null> {
@@ -328,7 +331,45 @@ export async function getDecisionDetail(db: D1Database, userId: number, id: numb
     if (related.length >= 5) break;
   }
 
-  return { decision: m, status: m.superseded_by_id ? "archived" : "active", chain, sourceChat, related };
+  return {
+    decision: m,
+    status: m.superseded_by_id ? "archived" : "active",
+    chain,
+    sourceChat,
+    related,
+    tasks: await linkedTasks(db, userId, chainIds),
+  };
+}
+
+// ── 決定→タスク化ブリッジ (憲法 Rule 4: アイデアより実行を優先) ──
+// 決定を Dscribe のタスクに落とす。リンクは description 内の [決定#N] マーカーで持つ
+// (スキーマ変更なし。Claude 側の list_tasks からも同じタスクが見える = 共有脳)。
+
+export async function taskFromDecision(db: D1Database, userId: number, decisionId: number): Promise<TaskRow> {
+  const m = await getMemory(db, userId, decisionId);
+  if (!m || m.kind !== "decision") throw new Error("決定事項が見つかりません");
+  const title = (m.title || m.content.slice(0, 60)).slice(0, 200);
+  return createTask(db, userId, {
+    title: `実行: ${title}`,
+    description: `[決定#${decisionId}] から作成\n\n${m.content.slice(0, 2000)}`,
+    project: m.project ?? undefined,
+  });
+}
+
+// この決定(チェーン全体)にひもづく実行タスク一覧
+export async function linkedTasks(db: D1Database, userId: number, decisionIds: number[]): Promise<TaskRow[]> {
+  if (!decisionIds.length) return [];
+  const conds = decisionIds.map(() => `t.description LIKE ? ESCAPE '\\'`).join(" OR ");
+  const binds = decisionIds.map((id) => `%[決定#${id}]%`);
+  const { results } = await db
+    .prepare(
+      `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, p.name AS project, t.created_at, t.updated_at, t.completed_at
+         FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+        WHERE t.user_id = ? AND (${conds}) ORDER BY t.id DESC LIMIT 20`
+    )
+    .bind(userId, ...binds)
+    .all<TaskRow>();
+  return results;
 }
 
 // ── OS内の横断検索 (実装準備設計書 第12章) ─────────────────

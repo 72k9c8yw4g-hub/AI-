@@ -35,6 +35,7 @@ import {
   searchOs,
   setRoleModel,
   setUserApiKey,
+  taskFromDecision,
 } from "./db";
 
 function json(data: unknown, status = 200): Response {
@@ -234,10 +235,18 @@ export async function handleOsApi(
     return notFound();
   }
 
-  // /os/decisions … 決定事項(一覧 / 詳細)
+  // /os/decisions … 決定事項(一覧 / 詳細 / タスク化)
   if (head === "decisions") {
-    // GET /os/decisions/<id> … 詳細(更新履歴・元チャット・関連決定つき) — 実装準備第8章
     const did = Number(rest[1]);
+    // POST /os/decisions/<id>/task … 決定を実行タスクに落とす(憲法 Rule 4: 実行優先)
+    if (Number.isInteger(did) && did > 0 && rest[2] === "task" && method === "POST") {
+      try {
+        return json({ task: await taskFromDecision(db, userId, did) }, 201);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+      }
+    }
+    // GET /os/decisions/<id> … 詳細(更新履歴・元チャット・関連決定・実行タスクつき) — 実装準備第8章
     if (Number.isInteger(did) && did > 0 && method === "GET") {
       const detail = await getDecisionDetail(db, userId, did);
       return detail ? json(detail) : notFound();
