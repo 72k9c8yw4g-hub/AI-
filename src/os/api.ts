@@ -19,6 +19,7 @@ import {
   createWorkerRun,
   deleteChat,
   deleteFile,
+  editUserMessage,
   getFileData,
   listFiles,
   getNotifications,
@@ -147,6 +148,19 @@ export async function handleOsApi(
       return file
         ? json({ file }, 201)
         : json({ error: "ファイルが空か、大きすぎます(約500KBまで。写真は縮小してから、または小さいものを選んでください)" }, 400);
+    }
+    return notFound();
+  }
+
+  // /os/messages/<id> … 自分の発言の編集(文の修正のみ・PATCH)
+  if (head === "messages" && rest[1]) {
+    const mid = Number(rest[1]);
+    if (!Number.isInteger(mid) || mid <= 0) return notFound();
+    if (method === "PATCH") {
+      const b = (await req.json().catch(() => ({}))) as { content?: unknown };
+      const content = typeof b.content === "string" ? b.content : "";
+      const ok = await editUserMessage(db, userId, mid, content);
+      return ok ? json({ ok: true }) : json({ error: "編集できませんでした(自分の発言のみ・空は不可)" }, 400);
     }
     return notFound();
   }
