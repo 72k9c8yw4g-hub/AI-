@@ -309,6 +309,8 @@ export interface OsCandidate {
   memory_id: number | null;
   created_at: string;
   decided_at: string | null;
+  reject_reason: string;
+  mentor_note: string;
 }
 
 export interface CandidateInput {
@@ -384,12 +386,33 @@ export async function approveCandidate(
   return { ok: true, memory };
 }
 
-export async function rejectCandidate(db: D1Database, userId: number, id: number): Promise<boolean> {
+// 却下 = 却下事項として記録に残す(憲法第8章)。却下理由を保存し、後で参照して再提案を防ぐ。
+export async function rejectCandidate(db: D1Database, userId: number, id: number, reason = ""): Promise<boolean> {
   const r = await db
-    .prepare(`UPDATE os_candidates SET status = 'rejected', decided_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'`)
-    .bind(id, userId)
+    .prepare(
+      `UPDATE os_candidates SET status = 'rejected', reject_reason = ?, decided_at = datetime('now')
+        WHERE id = ? AND user_id = ? AND status = 'pending'`
+    )
+    .bind((reason || "").slice(0, 500), id, userId)
     .run();
   return (r.meta.changes ?? 0) > 0;
+}
+
+// 却下事項の一覧(却下理由つき)。決定事項画面の「却下」タブ用。
+export async function listRejectedCandidates(db: D1Database, userId: number): Promise<OsCandidate[]> {
+  const { results } = await db
+    .prepare(`SELECT * FROM os_candidates WHERE user_id = ? AND status = 'rejected' ORDER BY id DESC LIMIT 200`)
+    .bind(userId)
+    .all<OsCandidate>();
+  return results;
+}
+
+// メンター確認の所見を候補に付ける(運用第8章: 記録官→メンター確認→ユーザー承認)。
+export async function setCandidateMentorNote(db: D1Database, userId: number, id: number, note: string): Promise<void> {
+  await db
+    .prepare(`UPDATE os_candidates SET mentor_note = ? WHERE id = ? AND user_id = ?`)
+    .bind((note || "").slice(0, 600), id, userId)
+    .run();
 }
 
 // ── 決定事項 (Dscribe memories kind=decision を転用) ──────────

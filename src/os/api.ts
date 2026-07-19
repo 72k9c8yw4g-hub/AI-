@@ -3,7 +3,7 @@
 
 import { anyKeyPresent, listProviderModels, type LlmSecrets, type Provider } from "./provider";
 import { lastBackupStatus, previewRestore, restoreOsChats, runBackup } from "./backup";
-import { runMentorTurn, runRecorderTurn, runMonitorTurn, runMonitorReport, runWorkerTask, runMentorConsolidation } from "./org";
+import { runMentorTurn, runRecorderTurn, runMonitorTurn, runMonitorReport, runWorkerTask, runMentorConsolidation, runCandidateReview } from "./org";
 import {
   activeDecisionList,
   addMessage,
@@ -46,6 +46,8 @@ import {
   listWorkerSlots,
   listWorkerRuns,
   rejectCandidate,
+  listRejectedCandidates,
+  setCandidateMentorNote,
   renameChat,
   resolveRoleCall,
   resolveWorkerCall,
@@ -304,8 +306,9 @@ export async function handleOsApi(
       if (!chat) return notFound();
       const msgs = (await listMessages(db, userId, id)).slice(-30);
       if (!msgs.length) return json({ save: false, reason: "まだ会話がありません" });
+      // 記録官(候補生成) + メンター確認 の2回ぶんを先に消費(運用第8章のフロー)
       try {
-        await consumeLlmBudget(db, userId, 1);
+        await consumeLlmBudget(db, userId, 2);
       } catch (e) {
         return json({ error: e instanceof Error ? e.message : String(e) }, 429);
       }
@@ -316,7 +319,13 @@ export async function handleOsApi(
       if (!r.save || !r.candidate) return json({ save: false, stub: r.stub });
       // 候補は元チャットのプロジェクトを引き継ぐ(承認後の決定がそのPJに属するように)
       const candidate = await createCandidate(db, userId, id, { ...r.candidate, project: chat.project ?? "" });
-      return json({ save: true, candidate, stub: r.stub });
+      // メンター確認(運用第8章: 記録官→メンター確認→ユーザー承認)。整合性の所見を候補に付ける
+      const revRm = await getRoleModel(db, userId, "mentor");
+      const rev = await resolveRoleCall(db, userId, "mentor", revRm, secrets);
+      const review = await runCandidateReview({ title: candidate.title, content: candidate.content }, active, rev.rm, rev.secrets);
+      await setCandidateMentorNote(db, userId, candidate.id, review.text);
+      candidate.mentor_note = review.text;
+      return json({ save: true, candidate, stub: r.stub || review.stub });
     }
 
     if (!action) {
@@ -353,7 +362,9 @@ export async function handleOsApi(
         return r.ok ? json({ ok: true, memory: r.memory }) : json({ error: r.error }, 400);
       }
       if (act === "reject" && method === "POST") {
-        return (await rejectCandidate(db, userId, cid)) ? json({ ok: true }) : notFound();
+        const rb = (await req.json().catch(() => ({}))) as { reason?: unknown };
+        const reason = typeof rb.reason === "string" ? rb.reason : "";
+        return (await rejectCandidate(db, userId, cid, reason)) ? json({ ok: true }) : notFound();
       }
     }
     return notFound();
@@ -378,7 +389,8 @@ export async function handleOsApi(
     if (!rest[1] && method === "GET") {
       const { active, archived } = await listDecisions(db, userId);
       const pending = await listPendingCandidates(db, userId);
-      return json({ active, archived, pending });
+      const rejected = await listRejectedCandidates(db, userId); // 却下事項(憲法第8章)
+      return json({ active, archived, pending, rejected });
     }
     return notFound();
   }

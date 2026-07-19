@@ -96,10 +96,33 @@ export interface ActiveDecision {
 
 export const RECORDER_SYSTEM = `あなたは「AI意思決定OS」の記録官です。会話から保存すべき結論を最大1件だけ抽出します。
 - 保存対象は「結論が出た決定・確定した仕様・確定ルール」のみ。議論の途中経過・雑談・未確定の案は保存しない。
-- 必ず次のJSONだけを出力する(前後に説明文を付けない):
-{"save": true, "kind": "decision", "title": "結論を一文で", "content": "決定の内容・理由・影響範囲", "tags": "カンマ区切りの短いタグ", "summary": "人間向けの短い要約", "supersedes_id": null}
+- content は憲法第7章に従い、次の項目を含めて構造化する(該当が無い項目は省略可):【決定】結論の内容 /【理由・採用理由】なぜそれを選んだか /【影響範囲】何に影響するか /【関連】関連する決定や前提。
+- 必ず次のJSONだけを出力する(前後に説明文を付けない。改行は \\n でエスケープする):
+{"save": true, "kind": "decision", "title": "結論を一文で", "content": "【決定】…\\n【理由・採用理由】…\\n【影響範囲】…", "tags": "カンマ区切りの短いタグ", "summary": "人間向けの短い要約", "supersedes_id": null}
 - 保存に値する確定した結論がなければ {"save": false} だけを返す。
 - 現在有効な決定(Active)の一覧を渡す。新しい結論が明らかにそのどれかを更新・変更する内容なら、supersedes_id にそのIDを入れる(そうでなければ null)。`;
+
+// メンターによる保存候補の整合性チェック(運用第8章: 記録官→メンター確認→ユーザー承認)。
+// ユーザーが承認する前に、現行の決定との矛盾や内容の妥当性を短く確認する。
+export const CANDIDATE_REVIEW_SYSTEM = `あなたは「AI意思決定OS」のメンター兼司令塔です。記録官が作った保存候補を、ユーザーが承認する前に整合性チェックします。
+- 現在有効な決定(Active)と矛盾しないか、内容が妥当かを確認する。
+- 出力は日本語1〜2文のみ(JSONやマークダウンにしない)。問題なければ「✅ 既存の決定と整合。承認して問題ありません。」、懸念があれば「⚠ 決定「〇〇」と矛盾の可能性: …」のように、対象を具体的に、簡潔に。`;
+
+// 候補をメンターがレビューして所見(1〜2文)を返す。
+export async function runCandidateReview(
+  candidate: { title: string; content: string },
+  active: ActiveDecision[],
+  rm: RoleModel,
+  secrets: LlmSecrets
+): Promise<LlmResult> {
+  const system = `${CANDIDATE_REVIEW_SYSTEM}\n\n${activeDecisionsText(active)}`;
+  const input: ChatMsg[] = [
+    { role: "user", content: `保存候補:\nタイトル: ${candidate.title}\n内容: ${candidate.content}\n\nこの候補を整合性チェックしてください。` },
+  ];
+  const res = await callLLM(system, input, rm, secrets);
+  if (res.stub) return { text: "✅ (メンター確認スタブ) 既存の決定との明らかな矛盾は検出されませんでした。", stub: true };
+  return res;
+}
 
 function activeDecisionsText(active: ActiveDecision[]): string {
   if (!active.length) return "現在有効な決定(Active): なし";
