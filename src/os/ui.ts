@@ -195,6 +195,7 @@ body{padding-bottom:56px}
     <button class="tab active" data-tab="active">Active</button>
     <button class="tab" data-tab="pending">承認待ち</button>
     <button class="tab" data-tab="archived">Archived</button>
+    <button class="tab" data-tab="rejected">却下</button>
   </div>
   <div class="panel-body" id="decBody"></div>
 </div>
@@ -444,6 +445,7 @@ function cardHtml(c){
     (c.summary?'<div class="cs">要約: '+esc(c.summary)+'</div>':'')+
     (c.tags?'<div class="cs">#'+esc(c.tags).split(',').join(' #')+'</div>':'')+
     (c.supersedes_id?'<div class="cs">既存の決定 #'+c.supersedes_id+' を更新</div>':'')+
+    (c.mentor_note?'<div class="cs" style="color:var(--accent);margin-top:6px">🧭 メンター確認: '+esc(c.mentor_note)+'</div>':'')+
     '<div class="ca"><button class="approve">承認して保存</button><button class="reject">却下</button></div>';
 }
 function wireCard(card,c){
@@ -456,10 +458,12 @@ function renderCandidate(c){
   wireCard(card,c); box.appendChild(card); box.scrollTop=box.scrollHeight;
 }
 function decide(card,cid,act){
+  var reason='';
+  if(act==='reject'){ reason=prompt('却下する理由(任意・記録に残して同じ案の再提案を防ぎます)',''); if(reason===null)return; }
   var btns=card.querySelectorAll('button'); Array.prototype.forEach.call(btns,function(b){b.disabled=true});
-  api('/candidates/'+cid+'/'+act,{method:'POST'}).then(function(r){
+  api('/candidates/'+cid+'/'+act,{method:'POST',body:JSON.stringify({reason:reason})}).then(function(r){
     card.classList.add('done');
-    if(act!=='approve'){ card.innerHTML='<div class="ch">🚫 却下しました</div>'; return; }
+    if(act!=='approve'){ card.innerHTML='<div class="ch">🚫 却下事項に記録しました'+(reason?'（理由: '+esc(reason)+'）':'')+'</div>'; return; }
     card.innerHTML='<div class="ch">✅ 決定事項に保存しました (Active)</div>';
     // 憲法 Rule 4: 決定したらすぐ実行に落とせるように
     if(r.memory&&r.memory.id){
@@ -508,6 +512,20 @@ function renderDec(tab){
     if(!ps.length){body.innerHTML='<div class="empty2">承認待ちの保存候補はありません。</div>';return;}
     body.innerHTML='';
     ps.forEach(function(c){var card=document.createElement('div');card.className='card';card.innerHTML=cardHtml(c);wireCard(card,c);body.appendChild(card)});
+    return;
+  }
+  if(tab==='rejected'){
+    var rj=decData.rejected||[];
+    if(!rj.length){body.innerHTML='<div class="empty2">却下事項はありません。<br>保存候補を却下すると、理由とともにここに残ります(同じ案の再提案を防ぐため)。</div>';return;}
+    body.innerHTML='';
+    rj.forEach(function(c){
+      var d=document.createElement('div'); d.className='dec arch';
+      d.innerHTML='<span class="badge arch">却下</span><span class="dm">'+esc(c.decided_at||c.created_at||'')+'</span>'+
+        '<div class="dt">'+esc(c.title||'(無題)')+'</div>'+
+        (c.content?'<div class="db">'+esc(c.content)+'</div>':'')+
+        (c.reject_reason?'<div class="cs" style="margin-top:6px;color:var(--muted)">却下理由: '+esc(c.reject_reason)+'</div>':'');
+      body.appendChild(d);
+    });
     return;
   }
   var list = tab==='archived' ? (decData.archived||[]) : (decData.active||[]);

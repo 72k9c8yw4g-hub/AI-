@@ -141,6 +141,13 @@ const OS_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_os_files_user ON os_files(user_id)`,
 ];
 
+// 既存テーブルへの後付けカラム(CREATE TABLE IF NOT EXISTS では追加されないので ALTER で足す)。
+// 既に存在すれば "duplicate column" エラーになるだけなので握りつぶす=冪等。
+const OS_MIGRATIONS: string[] = [
+  `ALTER TABLE os_candidates ADD COLUMN reject_reason TEXT NOT NULL DEFAULT ''`, // 却下理由(憲法第8章 却下事項)
+  `ALTER TABLE os_candidates ADD COLUMN mentor_note TEXT NOT NULL DEFAULT ''`, // メンター確認の所見(運用第8章)
+];
+
 let osSchemaReady = false;
 
 // 既存DB・新規DBの双方で OS テーブルを保証する。IF NOT EXISTS なので毎回呼んでも安全。
@@ -148,6 +155,13 @@ export async function ensureOsSchema(db: D1Database): Promise<void> {
   if (osSchemaReady) return;
   for (const sql of OS_STATEMENTS) {
     await db.prepare(sql).run();
+  }
+  for (const sql of OS_MIGRATIONS) {
+    try {
+      await db.prepare(sql).run();
+    } catch {
+      // 既存カラム(duplicate column name)なら無視。それ以外の失敗も起動を止めない。
+    }
   }
   osSchemaReady = true;
 }
