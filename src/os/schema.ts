@@ -124,6 +124,21 @@ const OS_STATEMENTS: string[] = [
     updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, project_id)
   )`,
+  // os_files … ファイル/写真(実装準備第3章)。R2を使わず D1 に base64 で保存する軽量版。
+  // 写真はブラウザ側で縮小してからアップロードする。大きいファイル/動画は非対応(サーバ側で上限拒否)。
+  // data はメタデータSELECTでは取得しない(一覧レスポンスを軽くするため)。
+  `CREATE TABLE IF NOT EXISTS os_files (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    chat_id    INTEGER REFERENCES os_chats(id),
+    project    TEXT NOT NULL DEFAULT '',
+    name       TEXT NOT NULL DEFAULT 'file',
+    mime       TEXT NOT NULL DEFAULT 'application/octet-stream',
+    size       INTEGER NOT NULL DEFAULT 0,
+    data       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_os_files_user ON os_files(user_id)`,
 ];
 
 let osSchemaReady = false;
