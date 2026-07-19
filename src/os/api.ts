@@ -38,9 +38,15 @@ import {
   listMessages,
   listPendingCandidates,
   listRoleModels,
+  listWorkerSlots,
   listWorkerRuns,
   rejectCandidate,
   renameChat,
+  resolveRoleCall,
+  resolveWorkerCall,
+  roleKeyStatus,
+  deleteRoleKey,
+  setRoleKey,
   searchOs,
   setRoleModel,
   setUserApiKey,
@@ -123,8 +129,9 @@ export async function handleOsApi(
 
       // LLM に渡す履歴は直近30件まで(長期チャットのコスト増大・コンテキスト溢れ防止)
       const history = (await listMessages(db, userId, id)).slice(-30);
-      const rm = await getRoleModel(db, userId, "mentor");
-      const result = await runMentorTurn(history, rm, secrets);
+      const menRm = await getRoleModel(db, userId, "mentor");
+      const men = await resolveRoleCall(db, userId, "mentor", menRm, secrets);
+      const result = await runMentorTurn(history, men.rm, men.secrets);
       const mentorMsg = await addMessage(db, userId, id, "mentor", result.text);
 
       // 特命監視官: メンター応答後に横から監査。問題があれば警告を残す(独立監査・非中継)。
@@ -135,8 +142,9 @@ export async function handleOsApi(
         ? (await projectActiveDecisions(db, userId, chat.project)).map((m) => ({ id: m.id, title: m.title || m.content.slice(0, 40) }))
         : await activeDecisionList(db, userId);
       const monRm = await getRoleModel(db, userId, "monitor");
+      const mon = await resolveRoleCall(db, userId, "monitor", monRm, secrets);
       const withMentor = (await listMessages(db, userId, id)).slice(-30);
-      const warnings = await runMonitorTurn(withMentor, active, monRm, secrets);
+      const warnings = await runMonitorTurn(withMentor, active, mon.rm, mon.secrets);
       if (warnings.length) {
         const text = warnings.map((w) => `[${w.type}] ${w.message}`).join("\n");
         monitorMsg = await addMessage(db, userId, id, "monitor", text);
@@ -173,14 +181,20 @@ export async function handleOsApi(
 
       const run = await createWorkerRun(db, userId, id, task);
       try {
-        const wrm = await getRoleModel(db, userId, "worker");
-        const wr = await runWorkerTask(task, ctx, wrm, secrets);
+        // 作業AI 1/2/3 は各々別モデル・別キーを割り当て可能(未設定なら worker 既定に畳む)
+        const agents = [
+          await resolveWorkerCall(db, userId, 1, secrets),
+          await resolveWorkerCall(db, userId, 2, secrets),
+          await resolveWorkerCall(db, userId, 3, secrets),
+        ];
+        const wr = await runWorkerTask(task, ctx, agents);
         let seq = 1;
         for (const item of wr.log) await addWorkerMsg(db, userId, run.id, seq++, item.role, item.name, item.content);
 
         // 成果物はメンターが検証・整理してからユーザーに提示(直接は出さない)
         const mrm = await getRoleModel(db, userId, "mentor");
-        const cons = await runMentorConsolidation(task, wr.deliverable, mrm, secrets);
+        const mcons = await resolveRoleCall(db, userId, "mentor", mrm, secrets);
+        const cons = await runMentorConsolidation(task, wr.deliverable, mcons.rm, mcons.secrets);
         const mentorMsg = await addMessage(db, userId, id, "mentor", `🛠【作業AIの成果・メンター整理】\n${cons.text}`);
         await finishWorkerRun(db, userId, run.id, cons.text);
 
@@ -206,8 +220,9 @@ export async function handleOsApi(
       }
       const active = await activeDecisionList(db, userId);
       const counts = await warningCounts(db, userId, id);
-      const rm = await getRoleModel(db, userId, "monitor");
-      const r = await runMonitorReport(msgs, active, counts, rm, secrets);
+      const repRm = await getRoleModel(db, userId, "monitor");
+      const rep = await resolveRoleCall(db, userId, "monitor", repRm, secrets);
+      const r = await runMonitorReport(msgs, active, counts, rep.rm, rep.secrets);
       const report = await createReport(db, userId, id, r.text);
       return json({ report, stub: r.stub });
     }
@@ -224,8 +239,9 @@ export async function handleOsApi(
         return json({ error: e instanceof Error ? e.message : String(e) }, 429);
       }
       const active = await activeDecisionList(db, userId);
-      const rm = await getRoleModel(db, userId, "recorder");
-      const r = await runRecorderTurn(msgs, active, rm, secrets);
+      const recRm = await getRoleModel(db, userId, "recorder");
+      const rec = await resolveRoleCall(db, userId, "recorder", recRm, secrets);
+      const r = await runRecorderTurn(msgs, active, rec.rm, rec.secrets);
       if (!r.save || !r.candidate) return json({ save: false, stub: r.stub });
       // 候補は元チャットのプロジェクトを引き継ぐ(承認後の決定がそのPJに属するように)
       const candidate = await createCandidate(db, userId, id, { ...r.candidate, project: chat.project ?? "" });
@@ -413,6 +429,8 @@ export async function handleOsApi(
       const info = await keyStatus(db, userId, envSecrets);
       return json({
         roles: await listRoleModels(db, userId),
+        workerSlots: await listWorkerSlots(db, userId),
+        roleKeys: await roleKeyStatus(db, userId), // 役割ごとの自前キー(末尾4文字)
         keys: { anthropic: info.anthropic.set, openai: info.openai.set, gemini: info.gemini.set },
         keyInfo: info,
       });
@@ -421,6 +439,23 @@ export async function handleOsApi(
       const b = (await req.json().catch(() => ({}))) as { role?: unknown; provider?: unknown; model?: unknown };
       const ok = await setRoleModel(db, userId, String(b.role ?? ""), String(b.provider ?? ""), String(b.model ?? ""));
       return ok ? json({ ok: true }) : json({ error: "role または provider が不正です" }, 400);
+    }
+    return notFound();
+  }
+
+  // /os/rolekeys … 役割ごとのAPIキー上書き(空なら共有キーに落ちる)
+  if (head === "rolekeys") {
+    if (method === "PUT") {
+      const b = (await req.json().catch(() => ({}))) as { role?: unknown; key?: unknown };
+      const ok = await setRoleKey(db, userId, String(b.role ?? ""), b.key);
+      return ok
+        ? json({ ok: true })
+        : json({ error: "role が不正か、キーの形式が不正です(空白・改行なし、10文字以上)" }, 400);
+    }
+    if (method === "DELETE") {
+      const b = (await req.json().catch(() => ({}))) as { role?: unknown };
+      await deleteRoleKey(db, userId, String(b.role ?? ""));
+      return json({ ok: true });
     }
     return notFound();
   }

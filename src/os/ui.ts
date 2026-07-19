@@ -630,8 +630,8 @@ function loadRuns(){
 }
 
 // ── 役割別モデル設定 ──
-var ROLE_JA={mentor:'メンター兼司令塔',monitor:'特命監視官',recorder:'記録官',worker:'作業AI群'};
-var DEFAULT_MODELS={anthropic:'claude-sonnet-4-20250514',openai:'gpt-4o',gemini:'gemini-2.0-flash'};
+var ROLE_JA={mentor:'メンター兼司令塔',monitor:'特命監視官',recorder:'記録官',worker:'作業AI群(既定)',worker1:'　└ 作業AI-1',worker2:'　└ 作業AI-2',worker3:'　└ 作業AI-3'};
+var DEFAULT_MODELS={anthropic:'claude-sonnet-4-20250514',openai:'gpt-4o',gemini:'gemini-2.5-flash'};
 el('setClose').onclick=function(){showScreen('chat')};
 var PROV_JA={anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',gemini:'Google (Gemini)'};
 function keyRow(p, info){
@@ -728,22 +728,45 @@ function loadRoles(){
     var ksBox=el('keyStatus'); ksBox.innerHTML='APIキー接続状況 — キーはあなた専用の保管庫(D1)に保存され、このURLを知る本人だけが使えます。<br><span style="opacity:.8">Gemini は <b>aistudio.google.com</b> →「Get API key」で無料発行できます(AIzaSy… で始まる文字列)。プロジェクトID(gen-lang-client-…)ではありません。</span>';
     ['gemini','anthropic','openai'].forEach(function(p){ if(ki[p]) ksBox.appendChild(keyRow(p, ki[p])); });
     var list=el('roleList'); list.innerHTML='';
-    d.roles.forEach(function(r){
+    var roleKeys=d.roleKeys||{};
+    function renderRole(r,opt){
+      opt=opt||{};
       var box=document.createElement('div'); box.className='role';
       var opts=['anthropic','openai','gemini'].map(function(p){return '<option value="'+p+'"'+(p===r.provider?' selected':'')+'>'+p+'</option>'}).join('');
-      box.innerHTML='<h4>'+esc(ROLE_JA[r.role]||r.role)+'</h4>'+
+      var rk=roleKeys[r.role];
+      var keyState=rk&&rk.set?'専用キー …'+esc(rk.tail):'共有キーを使用';
+      var inh=opt.slot&&!r.explicit?' <span class="dm" style="font-weight:normal">(既定に従う)</span>':'';
+      box.innerHTML='<h4>'+esc(ROLE_JA[r.role]||r.role)+inh+'</h4>'+
         '<div class="r"><select>'+opts+'</select><input list="dl-'+esc(r.provider)+'" value="'+esc(r.model)+'" placeholder="モデル名(候補から選択可)"></div>'+
-        '<button class="save">保存</button><span class="saved" style="display:none">保存しました</span>';
+        '<button class="save">モデル保存</button><span class="saved" style="display:none">保存しました</span>'+
+        '<div class="dm" style="margin-top:10px">専用APIキー(任意・空欄なら共有キー) — <b>'+keyState+'</b></div>'+
+        '<div class="r"><input type="password" class="kinp" placeholder="この役割だけの専用キー" autocomplete="off"></div>'+
+        '<button class="savek">キー保存</button>'+(rk&&rk.set?'<button class="delk" style="margin-left:8px">クリア</button>':'')+'<span class="savedk" style="display:none">保存しました</span>';
       var sel=box.querySelector('select'), inp=box.querySelector('input'), sv=box.querySelector('.saved');
       // プロバイダを切り替えたらモデル名も既定に置き換え、候補リストも切り替える
       sel.onchange=function(){inp.value=DEFAULT_MODELS[sel.value]||'';inp.setAttribute('list','dl-'+sel.value)};
       box.querySelector('.save').onclick=function(){
         api('/roles',{method:'PUT',body:JSON.stringify({role:r.role,provider:sel.value,model:inp.value})}).then(function(){
           sv.style.display='inline'; setTimeout(function(){sv.style.display='none'},1500);
+          if(opt.slot)loadRoles(); // 作業AIスロットは「既定に従う」表示を更新するため再描画
         }).catch(function(e){alert(e.message)});
       };
+      var kinp=box.querySelector('.kinp'), svk=box.querySelector('.savedk');
+      box.querySelector('.savek').onclick=function(){
+        var v=kinp.value.trim(); if(!v){alert('専用キーを貼り付けてください(不要なら空のままでOK)');return;}
+        api('/rolekeys',{method:'PUT',body:JSON.stringify({role:r.role,key:v})}).then(function(){
+          kinp.value=''; svk.style.display='inline'; setTimeout(function(){svk.style.display='none'},1200); loadRoles();
+        }).catch(function(e){alert(e.message)});
+      };
+      var delk=box.querySelector('.delk');
+      if(delk)delk.onclick=function(){
+        if(!confirm('この役割の専用キーをクリアしますか？(共有キーに戻ります)'))return;
+        api('/rolekeys',{method:'DELETE',body:JSON.stringify({role:r.role})}).then(function(){loadRoles()}).catch(function(e){alert(e.message)});
+      };
       list.appendChild(box);
-    });
+    }
+    d.roles.forEach(function(r){renderRole(r)});
+    (d.workerSlots||[]).forEach(function(r){renderRole(r,{slot:true})});
   }).catch(function(e){el('roleList').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
 }
 

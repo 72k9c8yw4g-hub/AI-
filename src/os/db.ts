@@ -1,7 +1,7 @@
 // AI意思決定OS — データアクセス (チャット / メッセージ / 役割モデル設定)。
 // すべて user_id スコープ。既存 Dscribe の分離方針(ユーザーごとに完全独立)を踏襲する。
 
-import { resolveModel, type LlmSecrets, type Provider, type RoleModel } from "./provider";
+import { keyFor, resolveModel, type LlmSecrets, type Provider, type RoleModel } from "./provider";
 import {
   saveMemory,
   listMemories,
@@ -244,7 +244,8 @@ export async function autoTitleIfNeeded(db: D1Database, userId: number, chatId: 
   if (t) await renameChat(db, userId, chatId, t);
 }
 
-const VALID_ROLES = new Set(["mentor", "monitor", "recorder", "worker"]);
+// worker1/2/3 = 作業AI群の個別スロット(実装準備第14章「デフォルト＋個別上書き」)。未設定なら worker(既定)へ落ちる。
+const VALID_ROLES = new Set(["mentor", "monitor", "recorder", "worker", "worker1", "worker2", "worker3"]);
 const VALID_PROVIDERS = new Set<Provider>(["anthropic", "openai", "gemini"]);
 
 // 役割の使用モデルを取得。未設定なら既定(anthropic + 役割別既定モデル)。
@@ -268,6 +269,18 @@ export async function setRoleModel(db: D1Database, userId: number, role: string,
     .bind(userId, role, provider, (typeof model === "string" ? model : "").trim().slice(0, 80))
     .run();
   return true;
+}
+
+// 作業AI n(1..3)のモデル。個別設定(worker1/2/3)があればそれ、無ければ作業AI既定(worker)に落ちる。
+export async function getWorkerRoleModel(db: D1Database, userId: number, n: number): Promise<RoleModel> {
+  const row = await db
+    .prepare(`SELECT provider, model FROM os_role_config WHERE user_id = ? AND role = ?`)
+    .bind(userId, `worker${n}`)
+    .first<{ provider: string; model: string }>();
+  if (row && VALID_PROVIDERS.has(row.provider as Provider)) {
+    return { provider: row.provider as Provider, model: resolveModel(row.provider as Provider, row.model ?? "") };
+  }
+  return getRoleModel(db, userId, "worker");
 }
 
 // ── 保存候補 (os_candidates) ──────────────────────────────
@@ -645,6 +658,24 @@ export async function listRoleModels(db: D1Database, userId: number): Promise<{ 
   return out;
 }
 
+// 作業AI 1/2/3 の個別設定。explicit=false は「作業AI既定(worker)に従う」状態。設定画面用。
+export async function listWorkerSlots(
+  db: D1Database,
+  userId: number
+): Promise<{ role: string; provider: Provider; model: string; explicit: boolean }[]> {
+  const out: { role: string; provider: Provider; model: string; explicit: boolean }[] = [];
+  for (const n of [1, 2, 3]) {
+    const role = `worker${n}`;
+    const row = await db
+      .prepare(`SELECT provider, model FROM os_role_config WHERE user_id = ? AND role = ?`)
+      .bind(userId, role)
+      .first<{ provider: string; model: string }>();
+    const rm = await getWorkerRoleModel(db, userId, n);
+    out.push({ role, provider: rm.provider, model: rm.model, explicit: !!(row && VALID_PROVIDERS.has(row.provider as Provider)) });
+  }
+  return out;
+}
+
 // ── APIキーの暗号化 (AES-GCM) ─────────────────────────────
 // os_api_keys.key は平文で置かず封筒暗号化する。KEK(暗号鍵の素)は初回に自動生成して
 // settings に保存する。KEK が同じDBにある以上「DB丸ごと流出」には効かないが、
@@ -763,6 +794,89 @@ export async function setUserApiKey(db: D1Database, userId: number, provider: st
     .bind(userId, provider, enc)
     .run();
   return true;
+}
+
+// ── 役割別APIキー (os_role_keys) ──────────────────────────
+// 役割ごとの上書きキー。空の役割は共有キー(os_api_keys, プロバイダ別)へ落ちる。
+// 同じ会社でも役割ごとに別キーを持てる = 無料枠の隔離(監視官がメンターの枠を食い潰さない)。
+async function getRoleKey(db: D1Database, userId: number, role: string): Promise<string | undefined> {
+  const row = await db
+    .prepare(`SELECT key FROM os_role_keys WHERE user_id = ? AND role = ?`)
+    .bind(userId, role)
+    .first<{ key: string }>();
+  if (!row?.key) return undefined;
+  try {
+    return await decryptApiKey(db, row.key);
+  } catch {
+    return undefined; // 復号失敗(KEK消失など)。共有キーへ落ちる
+  }
+}
+
+export async function setRoleKey(db: D1Database, userId: number, role: string, key: unknown): Promise<boolean> {
+  if (!VALID_ROLES.has(role)) return false;
+  const k = (typeof key === "string" ? key : "").trim();
+  if (!k || /\s/.test(k) || k.length < 10 || k.length > 300) return false;
+  const enc = await encryptApiKey(db, k);
+  await db
+    .prepare(
+      `INSERT INTO os_role_keys (user_id, role, key) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, role) DO UPDATE SET key = excluded.key, updated_at = datetime('now')`
+    )
+    .bind(userId, role, enc)
+    .run();
+  return true;
+}
+
+export async function deleteRoleKey(db: D1Database, userId: number, role: string): Promise<void> {
+  await db.prepare(`DELETE FROM os_role_keys WHERE user_id = ? AND role = ?`).bind(userId, role).run();
+}
+
+// 役割ごとに、どの役割が自前キーを持っているか(末尾4文字のみ)。⚙️表示用。
+export async function roleKeyStatus(db: D1Database, userId: number): Promise<Record<string, { set: boolean; tail: string }>> {
+  const { results } = await db
+    .prepare(`SELECT role, key FROM os_role_keys WHERE user_id = ?`)
+    .bind(userId)
+    .all<{ role: string; key: string }>();
+  const out: Record<string, { set: boolean; tail: string }> = {};
+  for (const r of results) {
+    let tail = "";
+    try {
+      tail = (await decryptApiKey(db, r.key)).slice(-4);
+    } catch {
+      /* 復号不可でも set は true(存在はする) */
+    }
+    out[r.role] = { set: true, tail };
+  }
+  return out;
+}
+
+// 役割の呼び出しに使う {モデル, キー}。キーは 役割別キー → 共有プロバイダキー(env含む) の順で解決する。
+// callLLM は secrets から rm.provider のキーだけ読むので、その1枠だけ埋めて返す。
+export async function resolveRoleCall(
+  db: D1Database,
+  userId: number,
+  role: string,
+  rm: RoleModel,
+  base: LlmSecrets
+): Promise<{ rm: RoleModel; secrets: LlmSecrets }> {
+  const override = await getRoleKey(db, userId, role);
+  const secrets: LlmSecrets = {};
+  secrets[KEY_ENV_NAME[rm.provider]] = override || keyFor(rm.provider, base);
+  return { rm, secrets };
+}
+
+// 作業AI n(1..3)の {モデル, キー}。キーは workerN → worker(既定) → 共有キー の順。
+export async function resolveWorkerCall(
+  db: D1Database,
+  userId: number,
+  n: number,
+  base: LlmSecrets
+): Promise<{ rm: RoleModel; secrets: LlmSecrets }> {
+  const rm = await getWorkerRoleModel(db, userId, n);
+  const override = (await getRoleKey(db, userId, `worker${n}`)) || (await getRoleKey(db, userId, "worker"));
+  const secrets: LlmSecrets = {};
+  secrets[KEY_ENV_NAME[rm.provider]] = override || keyFor(rm.provider, base);
+  return { rm, secrets };
 }
 
 // ── LLM 呼び出しの1日上限(コスト暴走・トークン漏洩時の焼き尽くし対策) ──
