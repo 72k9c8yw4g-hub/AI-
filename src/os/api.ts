@@ -14,9 +14,13 @@ import {
   consumeLlmBudget,
   createCandidate,
   createChat,
+  createFile,
   createReport,
   createWorkerRun,
   deleteChat,
+  deleteFile,
+  getFileData,
+  listFiles,
   getNotifications,
   getProjectStatus,
   listOsProjects,
@@ -58,6 +62,14 @@ function json(data: unknown, status = 200): Response {
 }
 const notFound = () => json({ error: "not found" }, 404);
 
+// base64 → バイト列(ファイルのバイナリ配信用)
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 export async function handleOsApi(
   req: Request,
   db: D1Database,
@@ -90,6 +102,51 @@ export async function handleOsApi(
     if (method === "DELETE") {
       const b = (await req.json().catch(() => ({}))) as { provider?: unknown };
       return (await deleteUserApiKey(db, userId, String(b.provider ?? ""))) ? json({ ok: true }) : notFound();
+    }
+    return notFound();
+  }
+
+  // /os/files … ファイル/写真(D1保存・実装準備第3章)。写真はクライアント側で縮小してから送る。
+  if (head === "files") {
+    // /os/files/<id> … バイナリ配信(画像はインライン表示・その他はダウンロード) / 削除
+    if (rest[1]) {
+      const fid = Number(rest[1]);
+      if (!Number.isInteger(fid) || fid <= 0) return notFound();
+      if (method === "GET") {
+        const f = await getFileData(db, userId, fid);
+        if (!f) return notFound();
+        const inline = f.mime.startsWith("image/");
+        const dispName = encodeURIComponent(f.name);
+        return new Response(b64ToBytes(f.dataB64), {
+          headers: {
+            "content-type": f.mime || "application/octet-stream",
+            "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${dispName}`,
+            "cache-control": "private, max-age=3600",
+          },
+        });
+      }
+      if (method === "DELETE") return (await deleteFile(db, userId, fid)) ? json({ ok: true }) : notFound();
+      return notFound();
+    }
+    // /os/files … 一覧(メタのみ) / アップロード
+    if (method === "GET") {
+      const project = url.searchParams.get("project") ?? undefined;
+      const chatId = Number(url.searchParams.get("chat") ?? "");
+      return json({ files: await listFiles(db, userId, { project, chatId: Number.isInteger(chatId) && chatId > 0 ? chatId : undefined }) });
+    }
+    if (method === "POST") {
+      const b = (await req.json().catch(() => ({}))) as { name?: unknown; mime?: unknown; data?: unknown; project?: unknown; chat_id?: unknown };
+      const cid = Number(b.chat_id);
+      const file = await createFile(db, userId, {
+        chat_id: Number.isInteger(cid) && cid > 0 ? cid : null,
+        project: typeof b.project === "string" ? b.project : "",
+        name: typeof b.name === "string" ? b.name : "file",
+        mime: typeof b.mime === "string" ? b.mime : "application/octet-stream",
+        dataB64: typeof b.data === "string" ? b.data : "",
+      });
+      return file
+        ? json({ file }, 201)
+        : json({ error: "ファイルが空か、大きすぎます(約500KBまで。写真は縮小してから、または小さいものを選んでください)" }, 400);
     }
     return notFound();
   }

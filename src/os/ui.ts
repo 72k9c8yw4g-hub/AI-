@@ -55,6 +55,15 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .composer{flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--panel)}
 .composer textarea{flex:1;resize:none;max-height:140px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;line-height:1.5}
 .composer button{align-self:flex-end}
+/* ファイル/写真 */
+#fileStrip{display:none;flex-wrap:wrap;gap:8px;padding:8px 12px;border-top:1px solid var(--line);background:var(--panel)}
+.fchip{display:inline-block;border-radius:8px;overflow:hidden;border:1px solid var(--line);text-decoration:none}
+.fchip img{height:56px;width:56px;object-fit:cover;display:block}
+.fchip.doc{padding:8px 10px;font-size:12px;color:var(--text);background:var(--panel2)}
+.frow{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.fthumb{height:52px;width:52px;object-fit:cover;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--panel2);font-size:22px;text-decoration:none;flex:0 0 auto}
+.fmeta{flex:1;min-width:0}.fmeta a{color:var(--accent);word-break:break-all}
+.fdel{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12px;flex:0 0 auto}
 /* 保存候補カード */
 .card{align-self:stretch;max-width:100%;background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:12px 14px;margin:4px 0}
 .card .ch{font-size:12px;color:var(--accent);font-weight:700;margin-bottom:6px}
@@ -160,11 +169,14 @@ body{padding-bottom:56px}
   <main>
     <div class="banner" id="banner" style="display:none"></div>
     <div class="msgs" id="msgs"></div>
+    <div id="fileStrip"></div>
+    <input type="file" id="fileInput" accept="image/*,application/pdf,.txt,.md,.csv" style="display:none">
     <div class="composer">
+      <button class="icon" id="attachBtn" title="写真・ファイルを追加" style="align-self:flex-end;font-size:18px">📎</button>
       <button class="icon" id="proposeBtn" title="この会話から決定を記録" style="align-self:flex-end;font-size:18px">📝</button>
       <button class="icon" id="delegateBtn" title="入力を作業AIに振る" style="align-self:flex-end;font-size:18px">🛠</button>
       <button class="icon" id="reportBtn" title="監視官の節目レポート" style="align-self:flex-end;font-size:18px">📋</button>
-      <textarea id="input" rows="1" placeholder="メンターに相談…（🛠委任 / 📋監視官レポート）"></textarea>
+      <textarea id="input" rows="1" placeholder="メンターに相談…（📎ファイル / 🛠委任 / 📋レポート）"></textarea>
       <button class="primary" id="sendBtn">送信</button>
     </div>
   </main>
@@ -214,11 +226,19 @@ body{padding-bottom:56px}
     <div id="savedBody"></div>
   </div>
 </div>
+<div class="panel" id="filesPanel">
+  <div class="panel-h"><b>📎 ファイル</b><button id="filesClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-body">
+    <button class="primary" id="filesAdd" style="margin-bottom:14px">＋ 写真・ファイルを追加</button>
+    <div id="filesBody"></div>
+  </div>
+</div>
 <nav id="osnav">
   <button data-scr="home">🏠<span>ホーム</span></button>
   <button data-scr="chat">💬<span>チャット</span></button>
   <button data-scr="dec">📌<span>決定</span></button>
   <button data-scr="saved">📚<span>保存</span></button>
+  <button data-scr="files">📎<span>ファイル</span></button>
   <button data-scr="search">🔍<span>検索</span></button>
   <button data-scr="runs">🗂<span>AI会話</span></button>
   <button data-scr="set">⚙️<span>設定</span></button>
@@ -266,7 +286,7 @@ function loadChats(){
       var pj=document.createElement('button'); pj.className='del'; pj.textContent='📁'; pj.title='プロジェクトに割り当て';
       pj.onclick=function(e){e.stopPropagation();var name=prompt('プロジェクト名(空欄で未分類に戻す)',c.project||'');if(name===null)return;api('/chats/'+c.id,{method:'PATCH',body:JSON.stringify({project:name})}).then(function(){loadChats()}).catch(function(err){alert(err.message)})};
       var del=document.createElement('button'); del.className='del'; del.textContent='🗑';
-      del.onclick=function(e){e.stopPropagation();if(confirm('この会話を削除しますか？'))api('/chats/'+c.id,{method:'DELETE'}).then(function(){if(current===c.id){current=null;renderMessages([]);el('subtitle').textContent='メンターと議論する'}loadChats()})};
+      del.onclick=function(e){e.stopPropagation();if(confirm('この会話を削除しますか？'))api('/chats/'+c.id,{method:'DELETE'}).then(function(){if(current===c.id){current=null;renderMessages([]);el('subtitle').textContent='メンターと議論する';el('fileStrip').style.display='none';el('fileStrip').innerHTML=''}loadChats()})};
       div.querySelector('.t').onclick=function(){openChat(c.id,c.title)};
       div.appendChild(pj); div.appendChild(del);
       list.appendChild(div);
@@ -303,6 +323,7 @@ function openChat(id,title){
   openDrawer(false);
   el('msgs').innerHTML='<div class="empty">読み込み中…</div>';
   loadChats();
+  loadFileStrip(id);
   return api('/chats/'+id).then(function(d){renderMessages(d.messages)}).catch(function(e){el('msgs').innerHTML='<div class="empty">'+esc(e.message)+'</div>'});
 }
 
@@ -347,6 +368,7 @@ function send(){
     // 新規チャットを作ってから送る。openChat は呼ばず、再描画で吹き出しが消えないようにする
     api('/chats',{method:'POST',body:JSON.stringify({title:text.slice(0,30)})}).then(function(d){
       current=d.chat.id; el('subtitle').textContent=d.chat.title; el('msgs').innerHTML='';
+      el('fileStrip').style.display='none'; el('fileStrip').innerHTML='';
       doSend(text);
     }).catch(function(e){alert(e.message)});
   } else {
@@ -771,7 +793,7 @@ function loadRoles(){
 }
 
 // ── 画面切替(ナビ: スマホ=下タブ / PC=左レール) ──
-var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel',search:'searchPanel',saved:'savedPanel'};
+var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel',search:'searchPanel',saved:'savedPanel',files:'filesPanel'};
 // パネルの表示だけ切り替える(ローダーは呼ばない)。詳細ビューが再描画レースで消えるのを防ぐ。
 function activatePanel(scr){
   Object.keys(PANELS).forEach(function(k){el(PANELS[k]).classList.toggle('open',k===scr)});
@@ -784,9 +806,85 @@ function showScreen(scr){
   if(scr==='runs')loadRuns();
   if(scr==='set')loadRoles();
   if(scr==='saved')loadSaved();
+  if(scr==='files')loadFiles();
   if(scr==='search')setTimeout(function(){el('searchInput').focus()},50);
 }
 el('savedClose').onclick=function(){showScreen('chat')};
+el('filesClose').onclick=function(){showScreen('chat')};
+
+// ── ファイル/写真(D1保存・写真はブラウザ側で縮小) ──
+// 画像は canvas で最大1600pxに縮小してJPEG化。それ以外はそのまま(サーバ側で上限拒否)。
+function fileToPayload(file){
+  return new Promise(function(resolve,reject){
+    var fr=new FileReader();
+    fr.onerror=function(){reject(new Error('ファイルを読み込めませんでした'));};
+    if(file.type.indexOf('image/')===0){
+      // CSP(img-src 'self' data:)のため blob: は使わず data: URL から縮小する
+      fr.onload=function(){
+        var img=new Image();
+        img.onload=function(){
+          var max=1600, w=img.width, h=img.height;
+          if(w>max||h>max){ if(w>=h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
+          var cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+          cv.getContext('2d').drawImage(img,0,0,w,h);
+          var q=0.82, out=cv.toDataURL('image/jpeg',q);
+          while(out.length>900000 && q>0.4){ q-=0.15; out=cv.toDataURL('image/jpeg',q); }
+          resolve({name:(file.name||'photo').replace(/\.[^.]+$/,'')+'.jpg', mime:'image/jpeg', data:out.replace(/^data:[^,]*,/,'')});
+        };
+        img.onerror=function(){reject(new Error('画像を読み込めませんでした'));};
+        img.src=String(fr.result);
+      };
+      fr.readAsDataURL(file);
+    } else {
+      fr.onload=function(){ resolve({name:file.name||'file', mime:file.type||'application/octet-stream', data:String(fr.result).replace(/^data:[^,]*,/,'')}); };
+      fr.readAsDataURL(file);
+    }
+  });
+}
+function uploadFile(file){
+  if(!file)return;
+  fileToPayload(file).then(function(p){
+    if(p.data.length>900000){alert('ファイルが大きすぎます(約500KBまで)。写真は自動縮小しても大きい場合や、大きな書類・動画は入れられません。');return null;}
+    return api('/files',{method:'POST',body:JSON.stringify({name:p.name,mime:p.mime,data:p.data,chat_id:current})});
+  }).then(function(r){ if(r&&r.file){ if(current)loadFileStrip(current); if(el('filesPanel').classList.contains('open'))loadFiles(); } }).catch(function(e){alert(e.message);});
+}
+function fileHref(f){return API+'/files/'+f.id;}
+function fileChip(f){
+  var href=fileHref(f);
+  if(f.mime.indexOf('image/')===0) return '<a class="fchip" href="'+href+'" target="_blank" rel="noopener"><img src="'+href+'" alt="'+esc(f.name)+'"></a>';
+  return '<a class="fchip doc" href="'+href+'" target="_blank" rel="noopener">📄 '+esc(f.name)+'</a>';
+}
+// チャット下の添付ストリップ(このチャットのファイル)
+function loadFileStrip(chatId){
+  var strip=el('fileStrip'); if(!strip||!chatId)return;
+  api('/files?chat='+chatId).then(function(d){
+    if(!d.files.length){strip.style.display='none';strip.innerHTML='';return;}
+    strip.style.display='flex'; strip.innerHTML=d.files.map(fileChip).join('');
+  }).catch(function(){strip.style.display='none';});
+}
+// 📎 ファイルタブ(全ファイル一覧・削除)
+function loadFiles(){
+  var body=el('filesBody'); body.innerHTML='<div class="empty2">読み込み中…</div>';
+  api('/files').then(function(d){
+    if(!d.files.length){body.innerHTML='<div class="empty2">まだファイルはありません。<br>チャットの 📎、または上の「＋」から写真・書類を追加できます。</div>';return;}
+    body.innerHTML='';
+    d.files.forEach(function(f){
+      var href=fileHref(f), isImg=f.mime.indexOf('image/')===0;
+      var card=document.createElement('div'); card.className='frow';
+      card.innerHTML=(isImg?'<a href="'+href+'" target="_blank" rel="noopener"><img class="fthumb" src="'+href+'"></a>':'<a class="fthumb" href="'+href+'" target="_blank" rel="noopener">📄</a>')+
+        '<div class="fmeta"><a href="'+href+'" target="_blank" rel="noopener">'+esc(f.name)+'</a><div class="dm">'+Math.round(f.size/1024)+'KB · '+esc(f.created_at||'')+'</div></div>'+
+        '<button class="fdel">削除</button>';
+      card.querySelector('.fdel').onclick=function(){
+        if(!confirm('このファイルを削除しますか？'))return;
+        api('/files/'+f.id,{method:'DELETE'}).then(function(){loadFiles(); if(current)loadFileStrip(current);}).catch(function(e){alert(e.message);});
+      };
+      body.appendChild(card);
+    });
+  }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>';});
+}
+el('attachBtn').onclick=function(){ if(!current){alert('先にチャットを開いてください');return;} el('fileInput').click(); };
+el('fileInput').onchange=function(){ var f=el('fileInput').files[0]; el('fileInput').value=''; uploadFile(f); };
+el('filesAdd').onclick=function(){ el('fileInput').click(); };
 function renderMemCard(m, box){
   var d=document.createElement('div'); d.className='dec';
   var kindJa = m.kind==='note'?'📝 メモ':'💭 記憶';

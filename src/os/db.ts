@@ -879,6 +879,80 @@ export async function resolveWorkerCall(
   return { rm, secrets };
 }
 
+// ── ファイル/写真 (os_files) ──────────────────────────────
+// R2 を使わず D1 に base64 で保存する軽量版(カード不要・完全無料)。
+// 大きいファイル/動画は非対応。写真はブラウザ側で縮小してから送る前提。
+// D1 の行サイズを抑えるため、保存するbase64は約700KB(=元データ約525KB)まで。
+export const MAX_FILE_B64 = 700_000;
+
+export interface OsFileMeta {
+  id: number;
+  chat_id: number | null;
+  project: string;
+  name: string;
+  mime: string;
+  size: number;
+  created_at: string;
+}
+
+// data(base64)は保存するが、メタデータの一覧では返さない(レスポンスを軽く保つ)。
+export async function createFile(
+  db: D1Database,
+  userId: number,
+  f: { chat_id?: number | null; project?: string; name: string; mime: string; dataB64: string }
+): Promise<OsFileMeta | null> {
+  const dataB64 = (f.dataB64 || "").replace(/^data:[^,]*,/, ""); // data: プレフィックスが付いていても剥がす
+  if (!dataB64 || dataB64.length > MAX_FILE_B64) return null;
+  const name = (f.name || "file").trim().slice(0, 200) || "file";
+  const mime = (f.mime || "application/octet-stream").trim().slice(0, 120);
+  const size = Math.floor((dataB64.length * 3) / 4); // base64 → 元バイト数の概算
+  const row = await db
+    .prepare(
+      `INSERT INTO os_files (user_id, chat_id, project, name, mime, size, data)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, chat_id, project, name, mime, size, created_at`
+    )
+    .bind(userId, f.chat_id ?? null, (f.project || "").slice(0, 200), name, mime, size, dataB64)
+    .first<OsFileMeta>();
+  return row ?? null;
+}
+
+export async function listFiles(
+  db: D1Database,
+  userId: number,
+  opt?: { project?: string; chatId?: number }
+): Promise<OsFileMeta[]> {
+  let sql = `SELECT id, chat_id, project, name, mime, size, created_at FROM os_files WHERE user_id = ?`;
+  const binds: unknown[] = [userId];
+  if (opt?.chatId) {
+    sql += ` AND chat_id = ?`;
+    binds.push(opt.chatId);
+  } else if (opt?.project) {
+    sql += ` AND project = ?`;
+    binds.push(opt.project);
+  }
+  sql += ` ORDER BY id DESC LIMIT 500`;
+  const { results } = await db.prepare(sql).bind(...binds).all<OsFileMeta>();
+  return results;
+}
+
+// ダウンロード/表示用に本体(base64 + mime + name)を返す。user_id スコープで所有チェック。
+export async function getFileData(
+  db: D1Database,
+  userId: number,
+  id: number
+): Promise<{ name: string; mime: string; dataB64: string } | null> {
+  const row = await db
+    .prepare(`SELECT name, mime, data FROM os_files WHERE user_id = ? AND id = ?`)
+    .bind(userId, id)
+    .first<{ name: string; mime: string; data: string }>();
+  return row ? { name: row.name, mime: row.mime, dataB64: row.data } : null;
+}
+
+export async function deleteFile(db: D1Database, userId: number, id: number): Promise<boolean> {
+  const r = await db.prepare(`DELETE FROM os_files WHERE user_id = ? AND id = ?`).bind(userId, id).run();
+  return (r.meta.changes ?? 0) > 0;
+}
+
 // ── LLM 呼び出しの1日上限(コスト暴走・トークン漏洩時の焼き尽くし対策) ──
 export const DAILY_LLM_LIMIT = 500;
 
