@@ -89,6 +89,16 @@ const OS_STATEMENTS: string[] = [
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, provider)
   )`,
+  // os_role_keys … 役割ごとのAPIキー上書き(技術第4-5章/実装準備第14章: 役割ごとにAPI設定可能)。
+  // role = mentor/monitor/recorder/worker/worker1/worker2/worker3。空の役割は os_api_keys(共有・プロバイダ別)へ落ちる。
+  // 同じ会社でも役割ごとに別キーを持てる → 無料枠の隔離(監視官がメンターの枠を食い潰さない)に使う。
+  `CREATE TABLE IF NOT EXISTS os_role_keys (
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    role       TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, role)
+  )`,
   // os_llm_usage … 1日あたりのLLM呼び出し回数(コスト暴走・トークン漏洩時の焼き尽くし対策)
   `CREATE TABLE IF NOT EXISTS os_llm_usage (
     user_id INTEGER NOT NULL REFERENCES users(id),

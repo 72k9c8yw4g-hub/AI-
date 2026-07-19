@@ -328,24 +328,34 @@ export interface WorkerResult {
   stub: boolean;
 }
 
-// 作業AIの協働: 作業AI-1が草案 → 作業AI-2がレビュー → 作業AI-1が最終化。
+// 作業AI 1体分の {モデル, キー}。役割別に別モデル・別APIキーを割り当てられる(実装準備第14章)。
+export interface WorkerAgent {
+  rm: RoleModel;
+  secrets: LlmSecrets;
+}
+
+// 作業AIの協働: 作業AI-1が草案 → 作業AI-2がレビュー → 作業AI-3が最終化。
 // 固定3ターンで必ず収束させる(無限ループ防止 = 運用第7章/技術第6章)。
-export async function runWorkerTask(task: string, context: string, rm: RoleModel, secrets: LlmSecrets): Promise<WorkerResult> {
+// agents[0..2] = 作業AI 1/2/3。個別設定が無ければ同一エージェントに畳まれ、従来どおり動く。
+export async function runWorkerTask(task: string, context: string, agents: WorkerAgent[]): Promise<WorkerResult> {
   const base = `${WORKER_SYSTEM}\n\n# 背景(会話の要約)\n${context || "(なし)"}\n\n# タスク\n${task}`;
   const log: WorkerLogItem[] = [];
   let stub = false;
+  const a = agents[0];
+  const b = agents[1] ?? a;
+  const c = agents[2] ?? a;
 
-  const a1 = await callLLM(`${base}\n\nあなたは作業AI-1。まずタスクの草案(方針と具体策)を作成してください。`, [{ role: "user", content: "草案を作成してください。" }], rm, secrets);
+  const a1 = await callLLM(`${base}\n\nあなたは作業AI-1。まずタスクの草案(方針と具体策)を作成してください。`, [{ role: "user", content: "草案を作成してください。" }], a.rm, a.secrets);
   stub = stub || a1.stub;
   log.push({ role: "worker", name: "作業AI-1", content: a1.text });
 
-  const b1 = await callLLM(`${base}\n\nあなたは作業AI-2。作業AI-1の草案を批判的にレビューし、抜け・リスク・改善点を指摘してください。`, [{ role: "user", content: `作業AI-1の草案:\n${a1.text}\n\nレビューしてください。` }], rm, secrets);
+  const b1 = await callLLM(`${base}\n\nあなたは作業AI-2。作業AI-1の草案を批判的にレビューし、抜け・リスク・改善点を指摘してください。`, [{ role: "user", content: `作業AI-1の草案:\n${a1.text}\n\nレビューしてください。` }], b.rm, b.secrets);
   stub = stub || b1.stub;
   log.push({ role: "worker", name: "作業AI-2", content: b1.text });
 
-  const a2 = await callLLM(`${base}\n\nあなたは作業AI-1。作業AI-2のレビューを踏まえて、最終成果物をまとめてください。`, [{ role: "user", content: `作業AI-2のレビュー:\n${b1.text}\n\n最終成果物をまとめてください。` }], rm, secrets);
+  const a2 = await callLLM(`${base}\n\nあなたは作業AI-3。作業AI-1の草案と作業AI-2のレビューを踏まえて、最終成果物をまとめてください。`, [{ role: "user", content: `作業AI-1の草案:\n${a1.text}\n\n作業AI-2のレビュー:\n${b1.text}\n\n最終成果物をまとめてください。` }], c.rm, c.secrets);
   stub = stub || a2.stub;
-  log.push({ role: "worker", name: "作業AI-1(最終)", content: a2.text });
+  log.push({ role: "worker", name: "作業AI-3(最終)", content: a2.text });
 
   return { log, deliverable: a2.text, stub };
 }

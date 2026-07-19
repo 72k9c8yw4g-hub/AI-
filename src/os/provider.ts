@@ -45,7 +45,7 @@ export function resolveModel(provider: Provider, model: string): string {
   return m && family.test(m) ? m : DEFAULT_MODELS[provider];
 }
 
-function keyFor(p: Provider, s: LlmSecrets): string | undefined {
+export function keyFor(p: Provider, s: LlmSecrets): string | undefined {
   return p === "anthropic" ? s.ANTHROPIC_API_KEY : p === "openai" ? s.OPENAI_API_KEY : s.GEMINI_API_KEY;
 }
 
