@@ -64,6 +64,14 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .fthumb{height:52px;width:52px;object-fit:cover;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--panel2);font-size:22px;text-decoration:none;flex:0 0 auto}
 .fmeta{flex:1;min-width:0}.fmeta a{color:var(--accent);word-break:break-all}
 .fdel{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12px;flex:0 0 auto}
+/* メッセージのコピー/編集 */
+.mact{display:flex;gap:4px;margin-top:2px}
+.row.user .mact{justify-content:flex-end}
+.mact button{background:none;border:none;color:var(--muted);font-size:11px;padding:2px 5px;border-radius:6px}
+.mact button:hover{color:var(--text);background:var(--panel2)}
+.editbox{width:100%;box-sizing:border-box;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;line-height:1.5}
+.editrow{display:flex;gap:6px;margin-top:6px}
+.editrow button{font-size:13px;padding:5px 12px}
 /* 保存候補カード */
 .card{align-self:stretch;max-width:100%;background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:12px 14px;margin:4px 0}
 .card .ch{font-size:12px;color:var(--accent);font-weight:700;margin-bottom:6px}
@@ -299,13 +307,59 @@ function msgNode(m){
   if(m.role==='monitor'){
     var mon=document.createElement('div'); mon.className='mon';
     mon.innerHTML='<span class="ml">🛡 特命監視官</span>'+esc(m.content);
+    addMsgActions(mon, m, false);
     return mon;
   }
   var who = m.role==='user' ? 'あなた' : (m.role==='mentor' ? 'メンター' : (m.name||m.role));
   var row=document.createElement('div');
   row.className='row '+(m.role==='user'?'user':'mentor');
   row.innerHTML='<div class="who">'+esc(who)+'</div><div class="bubble">'+esc(m.content)+'</div>';
+  addMsgActions(row, m, m.role==='user');
   return row;
+}
+// 各メッセージに「コピー」、自分の発言には「編集」を付ける
+function addMsgActions(container, m, canEdit){
+  var bar=document.createElement('div'); bar.className='mact';
+  var cp=document.createElement('button'); cp.textContent='⧉ コピー';
+  cp.onclick=function(){ copyText(m.content, cp); };
+  bar.appendChild(cp);
+  if(canEdit && m.id){
+    var ed=document.createElement('button'); ed.textContent='✏️ 編集';
+    ed.onclick=function(){ startEditMsg(container, m); };
+    bar.appendChild(ed);
+  }
+  container.appendChild(bar);
+}
+function copyText(t, btn){
+  var done=function(){ var o=btn.textContent; btn.textContent='✓ コピー'; setTimeout(function(){btn.textContent=o},1200); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done).catch(function(){fallbackCopy(t);done();}); }
+  else { fallbackCopy(t); done(); }
+}
+function fallbackCopy(t){
+  var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try{document.execCommand('copy')}catch(e){} document.body.removeChild(ta);
+}
+// 自分の発言の編集(文の修正のみ・履歴は消さない)
+function startEditMsg(container, m){
+  var bubble=container.querySelector('.bubble'); if(!bubble)return;
+  var orig=m.content;
+  bubble.innerHTML='';
+  var ta=document.createElement('textarea'); ta.className='editbox'; ta.value=orig;
+  ta.rows=Math.min(10, orig.split(String.fromCharCode(10)).length+1);
+  var row=document.createElement('div'); row.className='editrow';
+  var save=document.createElement('button'); save.className='primary'; save.textContent='保存';
+  var cancel=document.createElement('button'); cancel.textContent='取消';
+  row.appendChild(save); row.appendChild(cancel);
+  bubble.appendChild(ta); bubble.appendChild(row); ta.focus();
+  cancel.onclick=function(){ bubble.textContent=orig; };
+  save.onclick=function(){
+    var v=ta.value.trim(); if(!v){alert('空にはできません');return;}
+    save.disabled=true;
+    api('/messages/'+m.id,{method:'PATCH',body:JSON.stringify({content:v})}).then(function(){
+      m.content=v; bubble.textContent=v;
+    }).catch(function(e){ alert(e.message); save.disabled=false; });
+  };
 }
 function renderMessages(msgs){
   var box=el('msgs'); box.innerHTML='';
@@ -351,6 +405,8 @@ function doSend(text){
   appendTyping();
   api('/chats/'+current+'/send',{method:'POST',body:JSON.stringify({content:text})}).then(function(d){
     removeTyping();
+    // 楽観表示の吹き出しを、id付きの本物(コピー/編集ボタン付き)に差し替える
+    if(d.user){ try{ box.replaceChild(msgNode(d.user), row); }catch(e){} }
     box.appendChild(msgNode(d.mentor));
     if(d.monitor) box.appendChild(msgNode(d.monitor));
     box.scrollTop=box.scrollHeight;

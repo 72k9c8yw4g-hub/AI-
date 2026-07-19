@@ -209,6 +209,17 @@ export async function listMessages(db: D1Database, userId: number, chatId: numbe
 // 1メッセージの最大長。DB肥大とLLMコスト暴走の入口を塞ぐ(タイトルは別途120字)
 const MAX_MESSAGE_CHARS = 8000;
 
+// 自分(user)の発言だけを編集する(文の修正のみ・履歴は消さない)。他役割の発言は編集不可。
+export async function editUserMessage(db: D1Database, userId: number, msgId: number, content: string): Promise<boolean> {
+  const text = (content || "").slice(0, MAX_MESSAGE_CHARS);
+  if (!text.trim()) return false;
+  const r = await db
+    .prepare(`UPDATE os_messages SET content = ? WHERE id = ? AND user_id = ? AND role = 'user'`)
+    .bind(text, msgId, userId)
+    .run();
+  return (r.meta.changes ?? 0) > 0;
+}
+
 // メッセージ追加。seq はチャット内連番。チャットの updated_at も進める。
 export async function addMessage(
   db: D1Database,
