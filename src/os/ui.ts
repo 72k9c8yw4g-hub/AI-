@@ -204,6 +204,7 @@ body{padding-bottom:56px}
   <div class="panel-body">
     <div class="keys" id="keyStatus"></div>
     <div id="roleList"></div>
+    <div id="prefsCard"></div>
     <div id="backupCard"></div>
   </div>
 </div>
@@ -815,8 +816,23 @@ function loadBackup(){
     };
   }).catch(function(){/* 非オーナー(403)は表示しない */});
 }
+// 節目レポート自動化トグル(運用第6章・既定off)
+function loadPrefs(){
+  var card=el('prefsCard'); if(!card)return;
+  api('/prefs').then(function(d){
+    var on=(d.prefs||{}).auto_report==='on';
+    card.innerHTML='<div class="role" style="margin-top:16px"><h4>📋 節目レポートの自動生成 <span class="dm" style="font-weight:normal">'+(on?'ON':'OFF')+'</span></h4>'+
+      '<div class="dm" style="margin-bottom:8px">決定を承認したとき、監視官が節目レポート(議題・未解決・決定・逸脱傾向)を自動でまとめます。<b>1回ぶんのLLMを消費</b>します。既定はOFF。</div>'+
+      '<button class="save" id="arToggle">'+(on?'自動生成をOFFにする':'自動生成をONにする')+'</button></div>';
+    el('arToggle').onclick=function(){
+      el('arToggle').disabled=true;
+      api('/prefs',{method:'PUT',body:JSON.stringify({key:'auto_report',value:on?'off':'on'})}).then(function(){loadPrefs()}).catch(function(e){alert(e.message);loadPrefs()});
+    };
+  }).catch(function(){card.innerHTML=''});
+}
 function loadRoles(){
   loadBackup();
+  loadPrefs();
   el('roleList').innerHTML='<div class="empty2">読み込み中…</div>';
   api('/roles').then(function(d){
     var ki=d.keyInfo||{};

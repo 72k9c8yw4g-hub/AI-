@@ -20,7 +20,11 @@ import {
   deleteChat,
   deleteFile,
   editUserMessage,
+  getCandidate,
   getFileData,
+  getPref,
+  setPref,
+  listPrefs,
   listFiles,
   getNotifications,
   getProjectStatus,
@@ -358,8 +362,26 @@ export async function handleOsApi(
     if (Number.isInteger(cid) && cid > 0) {
       const act = rest[2] ?? "";
       if (act === "approve" && method === "POST") {
+        const cand = await getCandidate(db, userId, cid); // chat_id を取っておく(承認後の節目レポート用)
         const r = await approveCandidate(db, userId, cid);
-        return r.ok ? json({ ok: true, memory: r.memory }) : json({ error: r.error }, 400);
+        if (!r.ok) return json({ error: r.error }, 400);
+        // 節目レポート自動化(運用第6章・任意・既定off)。決定承認=大きな方針決定の節目とみなす。
+        let report = null;
+        if ((await getPref(db, userId, "auto_report")) === "on" && cand?.chat_id) {
+          try {
+            await consumeLlmBudget(db, userId, 1);
+            const rmsgs = (await listMessages(db, userId, cand.chat_id)).slice(-30);
+            const ractive = await activeDecisionList(db, userId);
+            const rcounts = await warningCounts(db, userId, cand.chat_id);
+            const arRm = await getRoleModel(db, userId, "monitor");
+            const ar = await resolveRoleCall(db, userId, "monitor", arRm, secrets);
+            const rr = await runMonitorReport(rmsgs, ractive, rcounts, ar.rm, ar.secrets);
+            report = await createReport(db, userId, cand.chat_id, rr.text);
+          } catch {
+            // 予算超過やLLM失敗でも承認は成功のまま(レポートだけ諦める)
+          }
+        }
+        return json({ ok: true, memory: r.memory, report });
       }
       if (act === "reject" && method === "POST") {
         const rb = (await req.json().catch(() => ({}))) as { reason?: unknown };
@@ -538,6 +560,20 @@ export async function handleOsApi(
     if (method === "DELETE") {
       const b = (await req.json().catch(() => ({}))) as { role?: unknown };
       await deleteRoleKey(db, userId, String(b.role ?? ""));
+      return json({ ok: true });
+    }
+    return notFound();
+  }
+
+  // /os/prefs … ユーザー設定フラグ(既知キーのみ)。例: auto_report(決定承認で節目レポート自動生成)
+  if (head === "prefs") {
+    const ALLOWED = new Set(["auto_report"]);
+    if (method === "GET") return json({ prefs: await listPrefs(db, userId) });
+    if (method === "PUT") {
+      const b = (await req.json().catch(() => ({}))) as { key?: unknown; value?: unknown };
+      const key = String(b.key ?? "");
+      if (!ALLOWED.has(key)) return json({ error: "不明な設定キーです" }, 400);
+      await setPref(db, userId, key, String(b.value ?? ""));
       return json({ ok: true });
     }
     return notFound();
