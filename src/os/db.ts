@@ -257,7 +257,7 @@ export async function autoTitleIfNeeded(db: D1Database, userId: number, chatId: 
 
 // worker1/2/3 = 作業AI群の個別スロット(実装準備第14章「デフォルト＋個別上書き」)。未設定なら worker(既定)へ落ちる。
 const VALID_ROLES = new Set(["mentor", "monitor", "recorder", "worker", "worker1", "worker2", "worker3"]);
-const VALID_PROVIDERS = new Set<Provider>(["anthropic", "openai", "gemini"]);
+const VALID_PROVIDERS = new Set<Provider>(["anthropic", "openai", "gemini", "groq", "cerebras"]);
 
 // 役割の使用モデルを取得。未設定なら既定(anthropic + 役割別既定モデル)。
 // モデル名がプロバイダと食い違う(切替時の残骸・プロジェクトID誤入力)場合は読み取り時に自己修復する。
@@ -757,6 +757,8 @@ const KEY_ENV_NAME: Record<Provider, keyof LlmSecrets> = {
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
   gemini: "GEMINI_API_KEY",
+  groq: "GROQ_API_KEY",
+  cerebras: "CEREBRAS_API_KEY",
 };
 
 export interface KeyInfo {
@@ -798,6 +800,8 @@ export async function effectiveSecrets(db: D1Database, userId: number, env: LlmS
     ANTHROPIC_API_KEY: user.anthropic || env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: user.openai || env.OPENAI_API_KEY,
     GEMINI_API_KEY: user.gemini || env.GEMINI_API_KEY,
+    GROQ_API_KEY: user.groq || env.GROQ_API_KEY,
+    CEREBRAS_API_KEY: user.cerebras || env.CEREBRAS_API_KEY,
   };
 }
 
@@ -805,7 +809,7 @@ export async function effectiveSecrets(db: D1Database, userId: number, env: LlmS
 export async function keyStatus(db: D1Database, userId: number, env: LlmSecrets): Promise<Record<Provider, KeyInfo>> {
   const user = await getUserApiKeys(db, userId);
   const out = {} as Record<Provider, KeyInfo>;
-  for (const p of ["anthropic", "openai", "gemini"] as Provider[]) {
+  for (const p of ["anthropic", "openai", "gemini", "groq", "cerebras"] as Provider[]) {
     const dbKey = user[p];
     const envKey = env[KEY_ENV_NAME[p]];
     const key = dbKey || envKey || "";

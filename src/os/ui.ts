@@ -727,9 +727,9 @@ function loadRuns(){
 
 // ── 役割別モデル設定 ──
 var ROLE_JA={mentor:'メンター兼司令塔',monitor:'特命監視官',recorder:'記録官',worker:'作業AI群(既定)',worker1:'　└ 作業AI-1',worker2:'　└ 作業AI-2',worker3:'　└ 作業AI-3'};
-var DEFAULT_MODELS={anthropic:'claude-sonnet-4-20250514',openai:'gpt-4o',gemini:'gemini-2.5-flash'};
+var DEFAULT_MODELS={anthropic:'claude-sonnet-4-20250514',openai:'gpt-4o',gemini:'gemini-2.5-flash',groq:'llama-3.3-70b-versatile',cerebras:'llama-3.3-70b'};
 el('setClose').onclick=function(){showScreen('chat')};
-var PROV_JA={anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',gemini:'Google (Gemini)'};
+var PROV_JA={anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',gemini:'Google (Gemini)',groq:'Groq (Llama等・爆速)',cerebras:'Cerebras (Llama等・大容量)'};
 function keyRow(p, info){
   var box=document.createElement('div'); box.className='role';
   var state = info.set
@@ -759,7 +759,7 @@ function keyRow(p, info){
 }
 // 接続済みプロバイダの「実際に使えるモデル一覧」を取得して datalist に入れる(名前当て不要に)
 function loadModelLists(ki){
-  ['anthropic','openai','gemini'].forEach(function(p){
+  ['anthropic','openai','gemini','groq','cerebras'].forEach(function(p){
     var dl=el('dl-'+p);
     if(!dl){dl=document.createElement('datalist');dl.id='dl-'+p;el('setPanel').appendChild(dl)}
     if(!ki[p]||!ki[p].set)return;
@@ -821,14 +821,14 @@ function loadRoles(){
   api('/roles').then(function(d){
     var ki=d.keyInfo||{};
     loadModelLists(ki);
-    var ksBox=el('keyStatus'); ksBox.innerHTML='APIキー接続状況 — キーはあなた専用の保管庫(D1)に保存され、このURLを知る本人だけが使えます。<br><span style="opacity:.8">Gemini は <b>aistudio.google.com</b> →「Get API key」で無料発行できます(AIzaSy… で始まる文字列)。プロジェクトID(gen-lang-client-…)ではありません。</span>';
-    ['gemini','anthropic','openai'].forEach(function(p){ if(ki[p]) ksBox.appendChild(keyRow(p, ki[p])); });
+    var ksBox=el('keyStatus'); ksBox.innerHTML='APIキー接続状況 — キーはあなた専用の保管庫(D1)に保存され、このURLを知る本人だけが使えます。<br><span style="opacity:.8">無料キーの取り方: <b>Gemini</b>=aistudio.google.com「Get API key」/ <b>Groq</b>=console.groq.com（爆速）/ <b>Cerebras</b>=cloud.cerebras.ai（大容量）。役割ごとに別プロバイダにすると無料枠が独立するので、制限に当たりにくくなります。</span>';
+    ['gemini','groq','cerebras','anthropic','openai'].forEach(function(p){ if(ki[p]) ksBox.appendChild(keyRow(p, ki[p])); });
     var list=el('roleList'); list.innerHTML='';
     var roleKeys=d.roleKeys||{};
     function renderRole(r,opt){
       opt=opt||{};
       var box=document.createElement('div'); box.className='role';
-      var opts=['anthropic','openai','gemini'].map(function(p){return '<option value="'+p+'"'+(p===r.provider?' selected':'')+'>'+p+'</option>'}).join('');
+      var opts=['gemini','groq','cerebras','anthropic','openai'].map(function(p){return '<option value="'+p+'"'+(p===r.provider?' selected':'')+'>'+p+'</option>'}).join('');
       var rk=roleKeys[r.role];
       var keyState=rk&&rk.set?'専用キー …'+esc(rk.tail):'共有キーを使用';
       var inh=opt.slot&&!r.explicit?' <span class="dm" style="font-weight:normal">(既定に従う)</span>':'';

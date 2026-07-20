@@ -59,6 +59,8 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  GROQ_API_KEY?: string; // OpenAI互換・無料枠が独立(役割ごとに散らして枠を増やす用)
+  CEREBRAS_API_KEY?: string;
   // 自動バックアップの保存先(R2)。wrangler.toml の [[r2_buckets]] を有効化すると使える。
   // 未設定でも動く(バックアップが「未設定」ステータスになるだけ)。
   BACKUP?: R2Bucket;
