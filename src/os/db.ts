@@ -991,6 +991,30 @@ export async function deleteFile(db: D1Database, userId: number, id: number): Pr
   return (r.meta.changes ?? 0) > 0;
 }
 
+// ── ユーザー設定 (os_user_prefs) ─────────────────────────
+// 汎用 key-value のフラグ。例: auto_report="on"(決定承認時に節目レポート自動生成・既定off)。
+export async function getPref(db: D1Database, userId: number, key: string, def = ""): Promise<string> {
+  const row = await db.prepare(`SELECT value FROM os_user_prefs WHERE user_id = ? AND key = ?`).bind(userId, key).first<{ value: string }>();
+  return row?.value ?? def;
+}
+
+export async function setPref(db: D1Database, userId: number, key: string, value: string): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO os_user_prefs (user_id, key, value) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+    )
+    .bind(userId, key.slice(0, 60), (value || "").slice(0, 200))
+    .run();
+}
+
+export async function listPrefs(db: D1Database, userId: number): Promise<Record<string, string>> {
+  const { results } = await db.prepare(`SELECT key, value FROM os_user_prefs WHERE user_id = ?`).bind(userId).all<{ key: string; value: string }>();
+  const out: Record<string, string> = {};
+  for (const r of results) out[r.key] = r.value;
+  return out;
+}
+
 // ── LLM 呼び出しの1日上限(コスト暴走・トークン漏洩時の焼き尽くし対策) ──
 export const DAILY_LLM_LIMIT = 500;
 

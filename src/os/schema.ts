@@ -139,6 +139,14 @@ const OS_STATEMENTS: string[] = [
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_os_files_user ON os_files(user_id)`,
+  // os_user_prefs … ユーザー別の設定フラグ(汎用 key-value)。例: auto_report(決定承認時に節目レポート自動生成)。
+  `CREATE TABLE IF NOT EXISTS os_user_prefs (
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, key)
+  )`,
 ];
 
 // 既存テーブルへの後付けカラム(CREATE TABLE IF NOT EXISTS では追加されないので ALTER で足す)。
