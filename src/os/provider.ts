@@ -7,13 +7,23 @@
 //   npx wrangler secret put GEMINI_API_KEY
 // キーが無い役割はスタブ応答を返す → キー未設定でもUI・保存フローは全部テストできる。
 
-export type Provider = "anthropic" | "openai" | "gemini";
+// groq / cerebras は OpenAI 互換API。無料枠が各社独立なので、役割ごとに散らすと合計枠が増える。
+export type Provider = "anthropic" | "openai" | "gemini" | "groq" | "cerebras";
 
 export interface LlmSecrets {
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  GROQ_API_KEY?: string;
+  CEREBRAS_API_KEY?: string;
 }
+
+// OpenAI 互換プロバイダのベースURL(この3つは同じ呼び出しコードを共用する)。
+const OPENAI_COMPAT_BASE: Partial<Record<Provider, string>> = {
+  openai: "https://api.openai.com/v1",
+  groq: "https://api.groq.com/openai/v1",
+  cerebras: "https://api.cerebras.ai/v1",
+};
 
 export interface RoleModel {
   provider: Provider;
@@ -30,6 +40,26 @@ export const DEFAULT_MODELS: Record<Provider, string> = {
   anthropic: "claude-sonnet-4-20250514",
   openai: "gpt-4o",
   gemini: "gemini-2.5-flash",
+  groq: "llama-3.3-70b-versatile",
+  cerebras: "llama-3.3-70b",
+};
+
+// モデル名の妥当性チェック用の族(プロバイダ切替時の残骸を弾く)。
+const MODEL_FAMILY: Record<Provider, RegExp> = {
+  anthropic: /^claude/i,
+  openai: /^(gpt|o\d|chatgpt)/i,
+  gemini: /^(gemini|gemma|learnlm)/i,
+  groq: /^(llama|qwen|gemma|mixtral|deepseek|gpt-oss|kimi|moonshot|allam)/i,
+  cerebras: /^(llama|qwen|deepseek|gpt-oss)/i,
+};
+
+// キーの格納フィールド(provider → LlmSecrets のキー)。
+const KEY_FIELD: Record<Provider, keyof LlmSecrets> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
+  groq: "GROQ_API_KEY",
+  cerebras: "CEREBRAS_API_KEY",
 };
 
 // Gemini はモデルごとに無料枠の割当が変わる(古いモデルは枠ゼロで即429)。
@@ -40,18 +70,17 @@ const GEMINI_FALLBACKS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5
 // プロジェクトIDを貼ってしまった等の設定ミスは、そのプロバイダの既定モデルに戻す。
 export function resolveModel(provider: Provider, model: string): string {
   const m = (model || "").trim().replace(/^models\//, "");
-  const family =
-    provider === "anthropic" ? /^claude/i : provider === "openai" ? /^(gpt|o\d|chatgpt)/i : /^(gemini|gemma|learnlm)/i;
+  const family = MODEL_FAMILY[provider] || /.*/;
   return m && family.test(m) ? m : DEFAULT_MODELS[provider];
 }
 
 export function keyFor(p: Provider, s: LlmSecrets): string | undefined {
-  return p === "anthropic" ? s.ANTHROPIC_API_KEY : p === "openai" ? s.OPENAI_API_KEY : s.GEMINI_API_KEY;
+  return s[KEY_FIELD[p]];
 }
 
 // 少なくとも1つでもキーが設定されているか (UI に「LLM未接続」を出すため)
 export function anyKeyPresent(s: LlmSecrets): boolean {
-  return !!(s.ANTHROPIC_API_KEY || s.OPENAI_API_KEY || s.GEMINI_API_KEY);
+  return Object.values(KEY_FIELD).some((f) => s[f]);
 }
 
 export interface LlmResult {
@@ -72,9 +101,9 @@ export async function callLLM(
   const invoke = (m: string) =>
     rm.provider === "anthropic"
       ? callAnthropic(system, history, m, key)
-      : rm.provider === "openai"
-        ? callOpenAI(system, history, m, key)
-        : callGemini(system, history, m, key);
+      : rm.provider === "gemini"
+        ? callGemini(system, history, m, key)
+        : callOpenAICompat(system, history, m, key, rm.provider); // openai / groq / cerebras は共通
   try {
     const text = await invoke(model);
     return { text: text.trim() || "(空の応答)", stub: false };
@@ -140,17 +169,18 @@ export async function listProviderModels(p: Provider, key: string): Promise<stri
     const data = (await res.json()) as { data?: Array<{ id?: string }> };
     return (data.data ?? []).map((m) => m.id ?? "").filter(Boolean).sort().reverse();
   }
-  const res = await fetch("https://api.openai.com/v1/models", {
+  // openai / groq / cerebras … OpenAI互換の GET /models
+  const base = OPENAI_COMPAT_BASE[p] || OPENAI_COMPAT_BASE.openai!;
+  const res = await fetch(`${base}/models`, {
     headers: { authorization: `Bearer ${key}` },
     signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) throw new Error(`openai ${res.status}`);
+  if (!res.ok) throw new Error(`${p} ${res.status}`);
   const data = (await res.json()) as { data?: Array<{ id?: string }> };
-  return (data.data ?? [])
-    .map((m) => m.id ?? "")
-    .filter((n) => /^(gpt|o\d|chatgpt)/.test(n) && !/embedding|audio|tts|whisper|image|dall/i.test(n))
-    .sort()
-    .reverse();
+  const ids = (data.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+  // openai だけ gpt系に絞る。groq/cerebras は候補が少ないので全部返す(埋め込み等だけ除外)
+  const filtered = p === "openai" ? ids.filter((n) => /^(gpt|o\d|chatgpt)/.test(n)) : ids;
+  return filtered.filter((n) => !/embedding|audio|tts|whisper|image|dall|guard|prompt-guard/i.test(n)).sort().reverse();
 }
 
 async function callAnthropic(system: string, history: ChatMsg[], model: string, key: string): Promise<string> {
@@ -172,15 +202,17 @@ async function callAnthropic(system: string, history: ChatMsg[], model: string, 
   return (data.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
 }
 
-async function callOpenAI(system: string, history: ChatMsg[], model: string, key: string): Promise<string> {
+// OpenAI 互換API (openai / groq / cerebras 共通)。ベースURLとエラー表示名だけプロバイダで変える。
+async function callOpenAICompat(system: string, history: ChatMsg[], model: string, key: string, provider: Provider): Promise<string> {
+  const base = OPENAI_COMPAT_BASE[provider] || OPENAI_COMPAT_BASE.openai!;
   const messages = [{ role: "system", content: system }, ...history.filter((m) => m.role !== "system")];
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({ model, max_tokens: 1024, messages }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`${provider} ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
   return data.choices?.[0]?.message?.content ?? "";
 }
