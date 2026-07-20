@@ -12,56 +12,94 @@ export function renderApp(): string {
 <title>Dscribe – Second Brain</title>
 <style>
 :root{
-  --bg:#f5f6f8; --panel:#ffffff; --text:#1a1d21; --sub:#6b7280; --line:#e5e7eb;
-  --accent:#6c5ce7; --accent2:#00b894; --danger:#e74c3c; --chip:#eef0f4;
+  --bg:#0a0b0f;--panel:#13151d;--panel2:#1a1d27;--panel3:#222634;
+  --line:#242838;--line-soft:#1c202c;
+  --text:#f0f2f7;--sub:#8b93a7;--faint:#5c6478;
+  --accent:#7c74ff;--accent2:#a78bff;--accent-soft:rgba(124,116,255,.13);--accent-line:rgba(124,116,255,.42);
+  --ok:#43d6a0;--ok-soft:rgba(67,214,160,.14);--danger:#f0646e;--danger-soft:rgba(240,100,110,.13);
+  --chip:#1e2230;
+  --r-sm:9px;--r:13px;--r-lg:18px;
+  --sh-sm:0 1px 2px rgba(0,0,0,.35);--sh:0 8px 22px -8px rgba(0,0,0,.55);--sh-lg:0 20px 50px -16px rgba(0,0,0,.65);
+  --tap:.16s cubic-bezier(.4,0,.2,1);
 }
-@media (prefers-color-scheme: dark){
-  :root{ --bg:#101216; --panel:#181b21; --text:#e8eaed; --sub:#9aa0a6; --line:#2a2e36; --chip:#232730; }
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  background-image:radial-gradient(1100px 560px at 84% -14%,rgba(124,116,255,.10),transparent 60%),radial-gradient(820px 460px at -10% 4%,rgba(67,214,160,.045),transparent 56%);
+  background-attachment:fixed;
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+  font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;letter-spacing:-.006em}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2a2f3e;border-radius:9px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:#39405280}
+header{display:flex;align-items:center;gap:11px;padding:14px 20px;padding-top:max(14px,env(safe-area-inset-top));background:rgba(15,17,24,.72);backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid var(--line-soft);position:sticky;top:0;z-index:5}
+header>div{min-width:0}
+header h1{font-size:16.5px;margin:0;font-weight:750;letter-spacing:-.02em;white-space:nowrap}
+header .sub{color:var(--sub);font-size:12px;font-weight:500}
+#acct{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#osLink{text-decoration:none;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;flex:0 0 auto;transition:background var(--tap),border-color var(--tap),transform var(--tap)}
+#osLink:hover{background:var(--panel3);border-color:var(--accent-line);transform:translateY(-1px);text-decoration:none}
+@media(max-width:620px){
+  header{gap:9px;padding:12px 14px}
+  header h1 .sub{display:none}
+  #acct{font-size:11px;max-width:40vw}
+  #osLink{padding:7px 11px;font-size:12px}
 }
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:14px;line-height:1.6}
-header{display:flex;align-items:center;gap:10px;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-header h1{font-size:17px;margin:0} header .sub{color:var(--sub);font-size:12px}
-nav{display:flex;gap:4px;padding:10px 16px;flex-wrap:wrap}
-nav button{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:7px 14px;border-radius:20px;cursor:pointer;font-size:13px}
-nav button.active{background:var(--accent);border-color:var(--accent);color:#fff}
-main{max-width:900px;margin:0 auto;padding:8px 16px 60px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
-.card h2{font-size:15px;margin:0 0 10px}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
-.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
-.stat b{display:block;font-size:24px;color:var(--accent)}
-.stat span{color:var(--sub);font-size:12px}
+nav{display:flex;gap:7px;padding:14px 16px 6px;flex-wrap:wrap;max-width:900px;margin:0 auto}
+nav button{border:1px solid var(--line);background:var(--panel2);color:var(--sub);padding:8px 15px;border-radius:999px;cursor:pointer;font-size:13px;font-weight:600;transition:color var(--tap),background var(--tap),border-color var(--tap),transform var(--tap),box-shadow var(--tap)}
+nav button:hover{color:var(--text);background:var(--panel3);border-color:#2f3547}
+nav button.active{background:linear-gradient(180deg,var(--accent2),var(--accent));border-color:transparent;color:#fff;box-shadow:0 5px 14px -5px rgba(124,116,255,.6)}
+nav button:active{transform:translateY(1px)}
+nav button:focus-visible{outline:none;box-shadow:0 0 0 3px var(--accent-soft),0 0 0 1px var(--accent-line)}
+main{max-width:900px;margin:0 auto;padding:8px 16px 80px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;margin:14px 0;box-shadow:var(--sh-sm)}
+.card h2{font-size:14.5px;margin:0 0 12px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card.err{border-color:rgba(240,100,110,.35);color:var(--danger)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:14px 0}
+.stat{background:linear-gradient(165deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r-lg);padding:16px 14px;text-align:center;box-shadow:var(--sh-sm);transition:transform var(--tap),border-color var(--tap)}
+.stat:hover{transform:translateY(-2px);border-color:var(--accent-line)}
+.stat b{display:block;font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1.15;background:linear-gradient(180deg,var(--accent2),var(--accent));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.stat span{color:var(--sub);font-size:12px;font-weight:500}
 ul.plain{list-style:none;margin:0;padding:0}
-ul.plain li{padding:9px 4px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:flex-start}
+ul.plain li{padding:11px 8px;border-bottom:1px solid var(--line-soft);display:flex;gap:9px;align-items:flex-start;border-radius:8px;transition:background var(--tap)}
+ul.plain li:hover{background:var(--panel2)}
 ul.plain li:last-child{border-bottom:none}
 .grow{flex:1;min-width:0}
 .meta{color:var(--sub);font-size:12px}
-.chip{background:var(--chip);border-radius:10px;padding:1px 8px;font-size:11px;color:var(--sub);white-space:nowrap}
-.chip.high{color:#fff;background:var(--danger)}
-.chip.done{color:#fff;background:var(--accent2)}
-input,select,textarea{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit}
-textarea{width:100%;min-height:70px;resize:vertical}
-.row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.chip{display:inline-block;background:var(--chip);border:1px solid var(--line-soft);border-radius:999px;padding:2px 9px;font-size:11px;color:var(--sub);white-space:nowrap;font-weight:600}
+.chip.high{color:var(--danger);background:var(--danger-soft);border-color:rgba(240,100,110,.28)}
+.chip.done{color:var(--ok);background:var(--ok-soft);border-color:rgba(67,214,160,.26)}
+input,select,textarea{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:14px;font-family:inherit;transition:border-color var(--tap),box-shadow var(--tap)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+textarea{width:100%;min-height:70px;resize:vertical;line-height:1.55}
+.row{display:flex;gap:9px;flex-wrap:wrap;margin:10px 0;align-items:center}
 .row input[type=text]{flex:1;min-width:160px}
-button.primary{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:14px}
-button.ghost{background:none;border:none;color:var(--sub);cursor:pointer;font-size:13px;padding:4px}
-button.ghost:hover{color:var(--danger)}
-.snippet{color:var(--sub);font-size:12px;overflow:hidden;text-overflow:ellipsis}
-pre.code{background:var(--chip);border-radius:8px;padding:12px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all}
+button.primary{background:linear-gradient(180deg,var(--accent2),var(--accent));color:#fff;border:1px solid transparent;border-radius:10px;padding:9px 17px;cursor:pointer;font-size:14px;font-weight:650;box-shadow:0 4px 14px -4px rgba(124,116,255,.55),inset 0 1px 0 rgba(255,255,255,.16);transition:filter var(--tap),transform var(--tap),box-shadow var(--tap)}
+button.primary:hover{filter:brightness(1.07);transform:translateY(-1px)}
+button.primary:active{transform:translateY(1px)}
+button.primary:focus-visible{outline:none;box-shadow:0 0 0 3px var(--accent-soft),0 0 0 1px var(--accent-line)}
+button.ghost{background:none;border:none;color:var(--sub);cursor:pointer;font-size:13px;padding:5px;border-radius:7px;transition:color var(--tap),background var(--tap)}
+button.ghost:hover{color:var(--danger);background:var(--danger-soft)}
+.snippet{color:var(--sub);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+pre.code{background:var(--panel2);border:1px solid var(--line-soft);border-radius:var(--r);padding:13px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all;line-height:1.6;color:#d6dae6}
 .copybtn{float:right}
-progress{width:100%;height:10px}
-.viewer{white-space:pre-wrap;max-height:60vh;overflow-y:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px}
-dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;max-width:800px;width:92vw;padding:16px}
-dialog::backdrop{background:rgba(0,0,0,.5)}
-.ok{color:var(--accent2)} .err{color:var(--danger)}
-a{color:var(--accent)}
-.empty{color:var(--sub);text-align:center;padding:16px}
-.oldmem{opacity:.55}
-a.btnlike{display:inline-block;background:var(--accent);color:#fff;border-radius:8px;padding:8px 14px;font-size:13px;text-decoration:none}
+progress{width:100%;height:10px;border:none;border-radius:6px;overflow:hidden;background:var(--panel2)}
+progress::-webkit-progress-bar{background:var(--panel2);border-radius:6px}
+progress::-webkit-progress-value{background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:6px}
+progress::-moz-progress-bar{background:var(--accent);border-radius:6px}
+.viewer{white-space:pre-wrap;max-height:60vh;overflow-y:auto;background:var(--panel2);border:1px solid var(--line-soft);border-radius:var(--r);padding:14px;font-size:13px;line-height:1.7}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:var(--r-lg);max-width:800px;width:92vw;padding:18px;box-shadow:var(--sh-lg)}
+dialog::backdrop{background:rgba(4,5,9,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.ok{color:var(--ok)} .err{color:var(--danger)}
+a{color:var(--accent2);text-decoration:none}
+a:hover{text-decoration:underline}
+.empty{color:var(--sub);text-align:center;padding:22px 16px;line-height:1.8}
+.oldmem{opacity:.5}
+a.btnlike{display:inline-block;background:linear-gradient(180deg,var(--accent2),var(--accent));color:#fff;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 4px 14px -5px rgba(124,116,255,.5);transition:filter var(--tap),transform var(--tap)}
+a.btnlike:hover{filter:brightness(1.07);transform:translateY(-1px);text-decoration:none}
 </style>
 </head>
 <body>
-<header><span style="font-size:22px">🧠</span><div><h1>Dscribe <span class="sub">– Second Brain for Claude</span></h1></div><div class="sub" id="acct" style="margin-left:auto"></div><a id="osLink" href="#" style="text-decoration:none;border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:13px;color:var(--text);white-space:nowrap">🧭 意思決定OS</a></header>
+<header><span style="font-size:22px">🧠</span><div><h1>Dscribe <span class="sub">– Second Brain for Claude</span></h1></div><div class="sub" id="acct"></div><a id="osLink" href="#">🧭 意思決定OS</a></header>
 <nav id="nav"></nav>
 <main id="main"><div class="empty">読み込み中…</div></main>
 <dialog id="dlg"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b id="dlgTitle"></b><button class="ghost" onclick="document.getElementById('dlg').close()">✕ 閉じる</button></div><div class="viewer" id="dlgBody"></div><div style="margin-top:8px;text-align:center"><button class="primary" id="dlgMore" style="display:none">続きを読む</button></div></dialog>
@@ -423,7 +461,15 @@ api("/me").then(function(me){
 export function renderLanding(): string {
   return `<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Dscribe</title>
-<style>body{font-family:sans-serif;background:#101216;color:#e8eaed;display:grid;place-items:center;height:100vh;margin:0;text-align:center;padding:16px}</style></head>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;text-align:center;background:#0a0b0f;color:#f0f2f7;
+  background-image:radial-gradient(900px 520px at 82% -12%,rgba(124,116,255,.14),transparent 60%),radial-gradient(700px 420px at -8% 6%,rgba(67,214,160,.05),transparent 55%);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.006em;line-height:1.7}
+h1{font-weight:750;letter-spacing:-.02em;margin:.4em 0}
+code{background:#1a1d27;border:1px solid #242838;border-radius:7px;padding:2px 7px;font-size:.9em}
+a{color:#a78bff}
+</style></head>
 <body><div><div style="font-size:48px">🧠</div><h1>Dscribe – Second Brain</h1>
 <p>稼働中です。ダッシュボードへは自分専用のURL(<code>/app/&lt;トークン&gt;</code>)でアクセスしてください。</p>
 <p style="color:#9aa0a6">新規登録には招待リンクが必要です。URLを無くした場合は管理者(招待した人)に再発行を依頼してください。</p></div></body></html>`;
@@ -439,18 +485,27 @@ export function renderSetupPage(): string {
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
 <title>Dscribe – 初期設定</title>
 <style>
-:root{ --bg:#f5f6f8; --panel:#ffffff; --text:#1a1d21; --sub:#6b7280; --line:#e5e7eb; --accent:#6c5ce7; --accent2:#00b894; --danger:#e74c3c; --chip:#eef0f4; }
-@media (prefers-color-scheme: dark){ :root{ --bg:#101216; --panel:#181b21; --text:#e8eaed; --sub:#9aa0a6; --line:#2a2e36; --chip:#232730; } }
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;line-height:1.7;display:grid;place-items:center;min-height:100vh;padding:16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;max-width:600px;width:100%}
-h1{font-size:20px;margin:0 0 4px} .sub{color:var(--sub);font-size:13px}
-input{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:15px;margin:14px 0 10px}
-button.primary{width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;cursor:pointer}
-pre.code{background:var(--chip);border-radius:8px;padding:12px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all}
-button.copy{background:none;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;margin-bottom:10px}
-.err{color:var(--danger);margin-top:8px} .ok{color:var(--accent2)}
-.warn{background:var(--chip);border-radius:10px;padding:10px 12px;font-size:13px;margin-top:14px}
-a{color:var(--accent)}
+:root{
+  --bg:#0a0b0f;--panel:#13151d;--panel2:#1a1d27;--panel3:#222634;--text:#f0f2f7;--sub:#8b93a7;--line:#242838;--line-soft:#1c202c;
+  --accent:#7c74ff;--accent2:#a78bff;--danger:#f0646e;--ok:#43d6a0;--chip:#1e2230;
+  --tap:.16s cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  background-image:radial-gradient(900px 520px at 82% -12%,rgba(124,116,255,.12),transparent 60%),radial-gradient(700px 420px at -8% 6%,rgba(67,214,160,.05),transparent 55%);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased;letter-spacing:-.006em;display:grid;place-items:center;min-height:100vh;min-height:100dvh;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:30px;max-width:600px;width:100%;box-shadow:0 24px 60px -20px rgba(0,0,0,.7)}
+h1{font-size:21px;margin:0 0 4px;font-weight:750;letter-spacing:-.02em} .sub{color:var(--sub);font-size:13px}
+input{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:12px 14px;font-size:15px;margin:14px 0 10px;font-family:inherit;transition:border-color var(--tap),box-shadow var(--tap)}
+input:focus{outline:none;border-color:rgba(124,116,255,.42);box-shadow:0 0 0 3px rgba(124,116,255,.13)}
+button.primary{width:100%;background:linear-gradient(180deg,var(--accent2),var(--accent));color:#fff;border:1px solid transparent;border-radius:11px;padding:12px;font-size:15px;font-weight:650;cursor:pointer;box-shadow:0 6px 18px -5px rgba(124,116,255,.55),inset 0 1px 0 rgba(255,255,255,.16);transition:filter var(--tap),transform var(--tap)}
+button.primary:hover{filter:brightness(1.07);transform:translateY(-1px)} button.primary:active{transform:translateY(1px)}
+pre.code{background:var(--panel2);border:1px solid var(--line-soft);border-radius:10px;padding:12px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all;color:#d6dae6}
+button.copy{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:7px 13px;cursor:pointer;font-size:13px;margin-bottom:10px;font-weight:600;transition:background var(--tap)}
+button.copy:hover{background:var(--panel3)}
+.err{color:var(--danger);margin-top:8px} .ok{color:var(--ok)}
+.warn{background:rgba(240,180,94,.1);border:1px solid rgba(240,180,94,.28);color:#f0b45e;border-radius:12px;padding:11px 13px;font-size:13px;margin-top:14px;line-height:1.7}
+a{color:var(--accent2)}
 </style>
 </head>
 <body>
@@ -511,18 +566,27 @@ export function renderJoinPage(): string {
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
 <title>Dscribe – アカウント登録</title>
 <style>
-:root{ --bg:#f5f6f8; --panel:#ffffff; --text:#1a1d21; --sub:#6b7280; --line:#e5e7eb; --accent:#6c5ce7; --accent2:#00b894; --danger:#e74c3c; --chip:#eef0f4; }
-@media (prefers-color-scheme: dark){ :root{ --bg:#101216; --panel:#181b21; --text:#e8eaed; --sub:#9aa0a6; --line:#2a2e36; --chip:#232730; } }
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;line-height:1.7;display:grid;place-items:center;min-height:100vh;padding:16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;max-width:560px;width:100%}
-h1{font-size:20px;margin:0 0 4px} .sub{color:var(--sub);font-size:13px}
-input{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:15px;margin:14px 0 10px}
-button.primary{width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;cursor:pointer}
-pre.code{background:var(--chip);border-radius:8px;padding:12px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all}
-button.copy{background:none;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;margin-bottom:10px}
-.err{color:var(--danger);margin-top:8px} .ok{color:var(--accent2)}
-.warn{background:var(--chip);border-radius:10px;padding:10px 12px;font-size:13px;margin-top:14px}
-a{color:var(--accent)}
+:root{
+  --bg:#0a0b0f;--panel:#13151d;--panel2:#1a1d27;--panel3:#222634;--text:#f0f2f7;--sub:#8b93a7;--line:#242838;--line-soft:#1c202c;
+  --accent:#7c74ff;--accent2:#a78bff;--danger:#f0646e;--ok:#43d6a0;--chip:#1e2230;
+  --tap:.16s cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  background-image:radial-gradient(900px 520px at 82% -12%,rgba(124,116,255,.12),transparent 60%),radial-gradient(700px 420px at -8% 6%,rgba(67,214,160,.05),transparent 55%);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased;letter-spacing:-.006em;display:grid;place-items:center;min-height:100vh;min-height:100dvh;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:30px;max-width:560px;width:100%;box-shadow:0 24px 60px -20px rgba(0,0,0,.7)}
+h1{font-size:21px;margin:0 0 4px;font-weight:750;letter-spacing:-.02em} .sub{color:var(--sub);font-size:13px}
+input{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:12px 14px;font-size:15px;margin:14px 0 10px;font-family:inherit;transition:border-color var(--tap),box-shadow var(--tap)}
+input:focus{outline:none;border-color:rgba(124,116,255,.42);box-shadow:0 0 0 3px rgba(124,116,255,.13)}
+button.primary{width:100%;background:linear-gradient(180deg,var(--accent2),var(--accent));color:#fff;border:1px solid transparent;border-radius:11px;padding:12px;font-size:15px;font-weight:650;cursor:pointer;box-shadow:0 6px 18px -5px rgba(124,116,255,.55),inset 0 1px 0 rgba(255,255,255,.16);transition:filter var(--tap),transform var(--tap)}
+button.primary:hover{filter:brightness(1.07);transform:translateY(-1px)} button.primary:active{transform:translateY(1px)}
+pre.code{background:var(--panel2);border:1px solid var(--line-soft);border-radius:10px;padding:12px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-all;color:#d6dae6}
+button.copy{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:7px 13px;cursor:pointer;font-size:13px;margin-bottom:10px;font-weight:600;transition:background var(--tap)}
+button.copy:hover{background:var(--panel3)}
+.err{color:var(--danger);margin-top:8px} .ok{color:var(--ok)}
+.warn{background:rgba(240,180,94,.1);border:1px solid rgba(240,180,94,.28);color:#f0b45e;border-radius:12px;padding:11px 13px;font-size:13px;margin-top:14px;line-height:1.7}
+a{color:var(--accent2)}
 </style>
 </head>
 <body>
