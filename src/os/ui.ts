@@ -11,45 +11,49 @@ export function renderOsApp(token: string): string {
 <link rel="manifest" href="/os/${token}/manifest.webmanifest">
 <link rel="icon" type="image/png" href="/os/icon-192.png">
 <link rel="apple-touch-icon" href="/os/icon-192.png">
-<meta name="theme-color" content="#0f1115">
+<meta name="theme-color" content="#17150f">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="意思決定OS">
 <style>
 :root{
-  --bg:#0a0b0f;--panel:#13151d;--panel2:#1a1d27;--panel3:#222634;
-  --line:#242838;--line-soft:#1c202c;
-  --text:#f0f2f7;--muted:#8b93a7;--faint:#5c6478;
-  --accent:#7c74ff;--accent2:#a78bff;--accent-soft:rgba(124,116,255,.13);--accent-line:rgba(124,116,255,.42);
-  --user-g1:#5b62e6;--user-g2:#7c74ff;--mentor:#171a24;
-  --ok:#43d6a0;--ok-soft:rgba(67,214,160,.14);--warn:#f0b45e;--warn-bg:rgba(240,180,94,.10);--warn-line:rgba(240,180,94,.30);
-  --r-sm:9px;--r:13px;--r-lg:17px;--r-xl:22px;
-  --sh-sm:0 1px 2px rgba(0,0,0,.35);--sh:0 6px 18px -6px rgba(0,0,0,.5);--sh-lg:0 18px 46px -14px rgba(0,0,0,.62);
+  --bg:#17150f;--panel:#1e1b13;--panel2:#252118;--panel3:#2e2818;
+  --line:#342f22;--line-soft:#272219;
+  --text:#ece4d3;--muted:#a99f89;--faint:#746a56;
+  --accent:#c9a45c;--accent2:#dcbd7e;--accent-soft:rgba(201,164,92,.12);--accent-line:rgba(201,164,92,.40);
+  --user-g1:#c9a45c;--user-g2:#dcbd7e;--mentor:#1c1911;
+  --ok:#93a06a;--ok-soft:rgba(147,160,106,.15);--warn:#cf7f52;--warn-bg:rgba(207,127,82,.11);--warn-line:rgba(207,127,82,.32);
+  --serif:'Hiragino Mincho ProN','Hiragino Mincho Pro','YuMincho','Yu Mincho','Songti SC',serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic','Noto Sans JP',system-ui,sans-serif;
+  --r-sm:7px;--r:10px;--r-lg:14px;--r-xl:18px;
+  --sh-sm:0 1px 2px rgba(0,0,0,.4);--sh:0 8px 24px -10px rgba(0,0,0,.6);--sh-lg:0 22px 50px -18px rgba(0,0,0,.7);
   --tap:.16s cubic-bezier(.4,0,.2,1);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{
   background:var(--bg);color:var(--text);
-  background-image:radial-gradient(1100px 520px at 82% -12%,rgba(124,116,255,.10),transparent 60%),radial-gradient(760px 420px at -8% 8%,rgba(67,214,160,.05),transparent 55%);
-  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
-  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;letter-spacing:-.006em;
+  background-image:radial-gradient(1100px 520px at 82% -12%,rgba(201,164,92,.09),transparent 60%),radial-gradient(760px 420px at -8% 8%,rgba(147,160,106,.045),transparent 55%);
+  font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;letter-spacing:.002em;
   display:flex;flex-direction:column;height:100dvh;overflow:hidden}
 ::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-thumb{background:#2a2f3e;border-radius:9px;border:2px solid transparent;background-clip:padding-box}
-::-webkit-scrollbar-thumb:hover{background:#39405280}
+::-webkit-scrollbar-thumb{background:#3a3327;border-radius:9px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:#4a412f}
 header{display:flex;align-items:center;gap:11px;padding:13px 15px;padding-top:max(13px,env(safe-area-inset-top));background:rgba(15,17,24,.72);backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid var(--line-soft);flex:0 0 auto}
-header .title{font-weight:750;font-size:15.5px;letter-spacing:-.02em}
+header .title{font-family:var(--serif);font-weight:700;font-size:17.5px;letter-spacing:.02em;display:flex;align-items:center;gap:9px}
+.brand-mark{width:20px;height:20px;flex:0 0 auto;color:var(--accent)}
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-.14em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
 header .sub{color:var(--muted);font-size:12px;margin-top:1px}
 #subtitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56vw}
 button{font:inherit;cursor:pointer;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);padding:9px 13px;font-weight:550;transition:background var(--tap),border-color var(--tap),transform var(--tap),box-shadow var(--tap)}
-button:hover{background:var(--panel3);border-color:#2f3547}
+button:hover{background:var(--panel3);border-color:#453e2d}
 button:active{transform:translateY(1px)}
 button:focus-visible{outline:none;box-shadow:0 0 0 3px var(--accent-soft),0 0 0 1px var(--accent-line)}
 button.icon{padding:9px 11px;line-height:1;border-radius:11px}
-button.primary{background:linear-gradient(180deg,var(--accent2),var(--accent));border:1px solid transparent;color:#fff;font-weight:650;box-shadow:0 4px 14px -4px rgba(124,116,255,.55),inset 0 1px 0 rgba(255,255,255,.16)}
-button.primary:hover{filter:brightness(1.07);background:linear-gradient(180deg,var(--accent2),var(--accent))}
+button.primary{background:var(--accent);border:1px solid transparent;color:#1c1810;font-weight:700;box-shadow:var(--sh-sm)}
+button.primary:hover{background:var(--accent2)}
 .wrap{flex:1;display:flex;min-height:0}
 .drawer{position:fixed;inset:0 auto 0 0;width:82%;max-width:320px;background:var(--panel);border-right:1px solid var(--line);transform:translateX(-102%);transition:transform .2s;z-index:20;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
 .drawer.open{transform:none}
@@ -71,10 +75,10 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .row{display:flex;flex-direction:column;max-width:86%}
 .row.user{align-self:flex-end;align-items:flex-end}
 .row.mentor{align-self:flex-start;align-items:flex-start}
-.who{font-size:10.5px;color:var(--faint);margin:0 5px 4px;font-weight:600;letter-spacing:.02em}
-.bubble{padding:11px 14px;border-radius:16px;white-space:pre-wrap;word-break:break-word;line-height:1.65;font-size:15px;box-shadow:var(--sh-sm)}
-.row.user .bubble{background:linear-gradient(180deg,var(--user-g2),var(--user-g1));color:#fff;border-bottom-right-radius:6px;box-shadow:0 4px 14px -5px rgba(124,116,255,.5)}
-.row.mentor .bubble{background:var(--mentor);border:1px solid var(--line);border-bottom-left-radius:6px}
+.who{font-size:9.5px;color:var(--faint);margin:0 6px 5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase}
+.bubble{padding:12px 15px;border-radius:13px;white-space:pre-wrap;word-break:break-word;line-height:1.78;font-size:15px;box-shadow:var(--sh-sm)}
+.row.user .bubble{background:var(--accent);color:#1c1810;font-weight:500;border-bottom-right-radius:4px;box-shadow:var(--sh-sm)}
+.row.mentor .bubble{background:var(--mentor);border:1px solid var(--line);border-bottom-left-radius:4px}
 .typing{color:var(--muted);font-size:13px;padding:2px 6px;font-style:italic}
 .composer{flex:0 0 auto;display:flex;gap:8px;padding:11px 12px;padding-bottom:max(11px,env(safe-area-inset-bottom));border-top:1px solid var(--line-soft);background:rgba(15,17,24,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .composer textarea{flex:1;resize:none;max-height:140px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:15px;padding:11px 14px;font:inherit;line-height:1.55;transition:border-color var(--tap),box-shadow var(--tap)}
@@ -100,33 +104,33 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .editrow{display:flex;gap:6px;margin-top:6px}
 .editrow button{font-size:13px;padding:5px 12px}
 /* 保存候補カード */
-.card{align-self:stretch;max-width:100%;background:linear-gradient(180deg,var(--accent-soft),transparent 42%),var(--panel2);border:1px solid var(--accent-line);border-radius:var(--r-lg);padding:14px 15px;margin:4px 0;box-shadow:var(--sh)}
-.card .ch{font-size:11.5px;color:var(--accent2);font-weight:700;margin-bottom:7px;letter-spacing:.02em}
-.card .ct{font-weight:700;margin-bottom:6px;line-height:1.5;font-size:15px}
-.card .cb{white-space:pre-wrap;line-height:1.65;font-size:14px;color:#d6dae6}
+.card{align-self:stretch;max-width:100%;background:var(--panel2);border:1px solid var(--line);border-left:2.5px solid var(--accent);border-radius:var(--r);padding:15px 16px;margin:5px 0;box-shadow:var(--sh-sm)}
+.card .ch{font-size:10.5px;color:var(--accent2);font-weight:700;margin-bottom:8px;letter-spacing:.14em;text-transform:uppercase}
+.card .ct{font-family:var(--serif);font-weight:700;margin-bottom:6px;line-height:1.55;font-size:16px}
+.card .cb{white-space:pre-wrap;line-height:1.75;font-size:14px;color:#d8cfbc}
 .card .cs{font-size:12px;color:var(--muted);margin-top:8px}
 .card .ca{display:flex;gap:9px;margin-top:13px}
 .card .ca button{flex:1}
-.card .approve{background:linear-gradient(180deg,var(--accent2),var(--accent));border:1px solid transparent;color:#fff;font-weight:650;box-shadow:0 4px 14px -4px rgba(124,116,255,.5)}
+.card .approve{background:var(--accent);border:1px solid transparent;color:#1c1810;font-weight:700;box-shadow:var(--sh-sm)}
 .card.done{border-color:var(--line);background:var(--panel2);box-shadow:none}
 /* 決定事項パネル */
-.panel{position:fixed;inset:0;background:var(--bg);background-image:radial-gradient(900px 460px at 84% -10%,rgba(124,116,255,.09),transparent 60%);z-index:30;display:none;flex-direction:column;padding-top:env(safe-area-inset-top)}
+.panel{position:fixed;inset:0;background:var(--bg);background-image:radial-gradient(900px 460px at 84% -10%,rgba(201,164,92,.075),transparent 60%);z-index:30;display:none;flex-direction:column;padding-top:env(safe-area-inset-top)}
 .panel.open{display:flex}
-.panel-h{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 14px;border-bottom:1px solid var(--line-soft);font-size:17px;font-weight:750;letter-spacing:-.02em}
+.panel-h{display:flex;align-items:center;justify-content:space-between;padding:18px 16px 14px;border-bottom:1px solid var(--line-soft);font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:.01em}
 .panel-h button{background:none;border:none;font-size:20px;padding:4px 8px;color:var(--muted)}
 .panel-h button:hover{color:var(--text);background:none}
 .tabs{display:flex;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--line-soft)}
 .tabs .tab{flex:1;background:none;border:none;border-radius:9px 9px 0 0;color:var(--muted);padding:10px 6px;font-weight:600;position:relative}
 .tabs .tab:hover{color:var(--text);background:var(--panel)}
 .tabs .tab.active{color:var(--text);font-weight:700}
-.tabs .tab.active::after{content:"";position:absolute;left:12%;right:12%;bottom:-1px;height:2.5px;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.tabs .tab.active::after{content:"";position:absolute;left:12%;right:12%;bottom:-1px;height:2px;border-radius:3px;background:var(--accent)}
 .panel-body{flex:1;overflow:auto;padding:14px;-webkit-overflow-scrolling:touch}
 .dec{border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;margin-bottom:11px;background:var(--panel);box-shadow:var(--sh-sm);transition:border-color var(--tap),transform var(--tap)}
 .dec[style*="cursor"]:hover{border-color:var(--accent-line);transform:translateY(-1px)}
 .dec.arch{opacity:.58}
-.dec .dt{font-weight:700;margin:4px 0;font-size:15px;line-height:1.5}
+.dec .dt{font-family:var(--serif);font-weight:700;margin:4px 0;font-size:15.5px;line-height:1.55}
 .dec .dm{font-size:12px;color:var(--muted)}
-.dec .db{white-space:pre-wrap;font-size:14px;line-height:1.65;margin-top:6px;color:#d0d5e2}
+.dec .db{white-space:pre-wrap;font-size:14px;line-height:1.75;margin-top:6px;color:#d8cfbc}
 .badge{display:inline-block;font-size:10.5px;padding:2px 9px;border-radius:999px;margin-right:6px;font-weight:650;border:1px solid transparent}
 .badge.active{background:var(--ok-soft);color:var(--ok);border-color:rgba(67,214,160,.25)}
 .badge.arch{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
@@ -135,17 +139,18 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .empty2{color:var(--muted);text-align:center;padding:34px 14px;font-size:14px;line-height:1.8}
 /* 監視官の警告(独立監査ライン) */
 .mon{align-self:center;max-width:94%;background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-line);border-radius:var(--r);padding:9px 13px;font-size:13px;white-space:pre-wrap;line-height:1.6;box-shadow:var(--sh-sm)}
-.mon .ml{display:block;font-weight:700;font-size:11px;margin-bottom:3px;letter-spacing:.02em}
+.mon .ml{display:block;font-weight:700;font-size:10.5px;margin-bottom:5px;letter-spacing:.1em;text-transform:uppercase}
+.mon .ml .ic{margin-right:2px}
 /* 役割別モデル設定 */
 .keys{font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.9;background:var(--panel);border:1px solid var(--line-soft);border-radius:var(--r);padding:12px 14px}
 .role{border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;margin-bottom:11px;background:var(--panel);box-shadow:var(--sh-sm)}
-.role h4{margin:0 0 9px;font-size:14px;font-weight:700}
+.role h4{margin:0 0 9px;font-family:var(--serif);font-size:15px;font-weight:700}
 .role .r{display:flex;gap:8px}
 .role select,.role input{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px 10px;font:inherit;transition:border-color var(--tap),box-shadow var(--tap)}
 .role select{flex:0 0 42%}
 .role input{flex:1;min-width:0}
 .role select:focus,.role input:focus{outline:none;border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
-.role .save{margin-top:9px;background:linear-gradient(180deg,var(--accent2),var(--accent));border:1px solid transparent;color:#fff;font-weight:650;padding:7px 15px;box-shadow:0 4px 12px -4px rgba(124,116,255,.5)}
+.role .save{margin-top:9px;background:var(--accent);border:1px solid transparent;color:#1c1810;font-weight:700;padding:7px 15px;box-shadow:var(--sh-sm)}
 .role .saved{color:var(--ok);font-size:12px;margin-left:8px;font-weight:600}
 /* 作業AI会話ログ(閲覧専用) */
 .worklog{align-self:stretch;max-width:100%;border:1px dashed var(--line);border-radius:12px;margin:4px 0;background:var(--panel)}
@@ -153,20 +158,20 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .worklog>summary::-webkit-details-marker{display:none}
 .worklog .wl{padding:0 12px 10px}
 .wmsg{border-top:1px solid var(--line-soft);padding:9px 0}
-.wmsg .wn{font-size:11px;color:var(--accent2);font-weight:700;margin-bottom:3px}
-.wmsg .wc{white-space:pre-wrap;font-size:13px;line-height:1.6;color:#c9cfdd}
+.wmsg .wn{font-size:10px;color:var(--accent2);font-weight:700;margin-bottom:4px;letter-spacing:.12em;text-transform:uppercase}
+.wmsg .wc{white-space:pre-wrap;font-size:13px;line-height:1.7;color:#cabfa9}
 /* ナビゲーション(スマホ=下タブ / PC=左レール) */
 #osnav{position:fixed;z-index:40;display:flex;background:rgba(15,17,24,.9);backdrop-filter:saturate(1.3) blur(16px);-webkit-backdrop-filter:saturate(1.3) blur(16px);border-top:1px solid var(--line-soft)}
 #osnav button{flex:1;background:none;border:none;border-radius:12px;color:var(--faint);font-size:19px;padding:6px 0 4px;margin:6px 3px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:color var(--tap),background var(--tap)}
 #osnav button span{font-size:9.5px;font-weight:600;letter-spacing:.01em}
 #osnav button:hover{color:var(--muted)}
-#osnav button.active{color:#fff;background:linear-gradient(180deg,var(--accent2),var(--accent));box-shadow:0 5px 14px -5px rgba(124,116,255,.6)}
+#osnav button.active{color:var(--accent2);background:var(--accent-soft)}
 body{padding-bottom:60px}
 #osnav{left:0;right:0;bottom:0;height:60px;padding-bottom:env(safe-area-inset-bottom)}
 .panel{bottom:60px}
 /* ホーム画面(実装準備設計書 第4章) */
 .home-sec{margin-bottom:20px}
-.home-sec h3{font-size:12px;color:var(--faint);margin:0 0 10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.home-sec h3{font-size:11px;color:var(--muted);margin:0 0 11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase}
 .hcard{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:14px;box-shadow:var(--sh-sm)}
 .hrow{display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);margin-bottom:9px;gap:8px;box-shadow:var(--sh-sm);transition:border-color var(--tap),transform var(--tap)}
 .hrow:hover{border-color:var(--accent-line);transform:translateY(-1px)}
@@ -190,9 +195,9 @@ body{padding-bottom:60px}
 </head>
 <body>
 <header>
-  <button class="icon menu" id="menuBtn" aria-label="メニュー">☰</button>
+  <button class="icon menu" id="menuBtn" aria-label="メニュー"><i data-ic="menu"></i></button>
   <div style="flex:1">
-    <div class="title">🧭 AI意思決定OS</div>
+    <div class="title"><svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>AI意思決定OS</div>
     <div class="sub" id="subtitle">メンターと議論する</div>
   </div>
 
@@ -201,12 +206,12 @@ body{padding-bottom:60px}
   <div class="scrim" id="scrim"></div>
   <aside class="drawer" id="drawer">
     <div class="dh">
-      <button class="primary" id="newChatBtn" style="flex:1">＋ 新しい会話</button>
+      <button class="primary" id="newChatBtn" style="flex:1"><i data-ic="plus"></i> 新しい会話</button>
     </div>
     <div class="chatlist" id="chatlist"></div>
     <div class="df">
-      <a id="recordsLink" href="#">🧠 Dscribe 記録ダッシュボード ↗</a>
-      <button id="installBtn" style="display:none;width:100%;margin-top:10px">⬇ アプリとしてインストール</button>
+      <a id="recordsLink" href="#"><i data-ic="book"></i> Dscribe 記録ダッシュボード ↗</a>
+      <button id="installBtn" style="display:none;width:100%;margin-top:10px"><i data-ic="install"></i> アプリとしてインストール</button>
     </div>
   </aside>
   <main>
@@ -215,17 +220,17 @@ body{padding-bottom:60px}
     <div id="fileStrip"></div>
     <input type="file" id="fileInput" accept="image/*,application/pdf,.txt,.md,.csv" style="display:none">
     <div class="composer">
-      <button class="icon" id="attachBtn" title="写真・ファイルを追加" style="align-self:flex-end;font-size:18px">📎</button>
-      <button class="icon" id="proposeBtn" title="この会話から決定を記録" style="align-self:flex-end;font-size:18px">📝</button>
-      <button class="icon" id="delegateBtn" title="入力を作業AIに振る" style="align-self:flex-end;font-size:18px">🛠</button>
-      <button class="icon" id="reportBtn" title="監視官の節目レポート" style="align-self:flex-end;font-size:18px">📋</button>
-      <textarea id="input" rows="1" placeholder="メンターに相談…（📎ファイル / 🛠委任 / 📋レポート）"></textarea>
+      <button class="icon" id="attachBtn" title="写真・ファイルを追加" style="align-self:flex-end;font-size:19px"><i data-ic="attach"></i></button>
+      <button class="icon" id="proposeBtn" title="この会話から決定を記録" style="align-self:flex-end;font-size:19px"><i data-ic="propose"></i></button>
+      <button class="icon" id="delegateBtn" title="入力を作業AIに振る" style="align-self:flex-end;font-size:19px"><i data-ic="delegate"></i></button>
+      <button class="icon" id="reportBtn" title="監視官の節目レポート" style="align-self:flex-end;font-size:19px"><i data-ic="report"></i></button>
+      <textarea id="input" rows="1" placeholder="メンターに相談…"></textarea>
       <button class="primary" id="sendBtn">送信</button>
     </div>
   </main>
 </div>
 <div class="panel" id="decPanel">
-  <div class="panel-h"><b>📌 決定事項</b><button id="decClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-h"><b><i data-ic="dec"></i> 決定事項</b><button id="decClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="tabs">
     <button class="tab active" data-tab="active">Active</button>
     <button class="tab" data-tab="pending">承認待ち</button>
@@ -235,7 +240,7 @@ body{padding-bottom:60px}
   <div class="panel-body" id="decBody"></div>
 </div>
 <div class="panel" id="setPanel">
-  <div class="panel-h"><b>⚙️ 役割別モデル設定</b><button id="setClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-h"><b><i data-ic="set"></i> 役割別モデル設定</b><button id="setClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="panel-body">
     <div class="keys" id="keyStatus"></div>
     <div id="roleList"></div>
@@ -244,15 +249,15 @@ body{padding-bottom:60px}
   </div>
 </div>
 <div class="panel" id="runPanel">
-  <div class="panel-h"><b>🗂 AI会話ログ（閲覧専用）</b><button id="runClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-h"><b><i data-ic="runs"></i> AI会話ログ（閲覧専用）</b><button id="runClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="panel-body" id="runBody"></div>
 </div>
 <div class="panel" id="homePanel">
-  <div class="panel-h"><b>🏠 ホーム</b><span class="sub" id="homeAcct"></span></div>
+  <div class="panel-h"><b><i data-ic="home"></i> ホーム</b><span class="sub" id="homeAcct"></span></div>
   <div class="panel-body" id="homeBody"></div>
 </div>
 <div class="panel" id="searchPanel">
-  <div class="panel-h"><b>🔍 検索</b><button id="searchClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-h"><b><i data-ic="search"></i> 検索</b><button id="searchClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="panel-body">
     <div class="r" style="display:flex;gap:8px;margin-bottom:14px">
       <input id="searchInput" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit" placeholder="チャット・決定事項・AI会話を横断検索(スペースでAND)">
@@ -262,7 +267,7 @@ body{padding-bottom:60px}
   </div>
 </div>
 <div class="panel" id="savedPanel">
-  <div class="panel-h"><b>📚 保存データ</b><button id="savedClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-h"><b><i data-ic="saved"></i> 保存データ</b><button id="savedClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="panel-body">
     <div class="r" style="display:flex;gap:8px;margin-bottom:14px">
       <input id="savedInput" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit" placeholder="保存データを検索(記憶・メモ)">
@@ -272,21 +277,21 @@ body{padding-bottom:60px}
   </div>
 </div>
 <div class="panel" id="filesPanel">
-  <div class="panel-h"><b>📎 ファイル</b><button id="filesClose" aria-label="閉じる">✕</button></div>
+  <div class="panel-h"><b><i data-ic="files"></i> ファイル</b><button id="filesClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="panel-body">
-    <button class="primary" id="filesAdd" style="margin-bottom:14px">＋ 写真・ファイルを追加</button>
+    <button class="primary" id="filesAdd" style="margin-bottom:14px"><i data-ic="plus"></i> 写真・ファイルを追加</button>
     <div id="filesBody"></div>
   </div>
 </div>
 <nav id="osnav">
-  <button data-scr="home">🏠<span>ホーム</span></button>
-  <button data-scr="chat">💬<span>チャット</span></button>
-  <button data-scr="dec">📌<span>決定</span></button>
-  <button data-scr="saved">📚<span>保存</span></button>
-  <button data-scr="files">📎<span>ファイル</span></button>
-  <button data-scr="search">🔍<span>検索</span></button>
-  <button data-scr="runs">🗂<span>AI会話</span></button>
-  <button data-scr="set">⚙️<span>設定</span></button>
+  <button data-scr="home"><i data-ic="home"></i><span>ホーム</span></button>
+  <button data-scr="chat"><i data-ic="chat"></i><span>チャット</span></button>
+  <button data-scr="dec"><i data-ic="dec"></i><span>決定</span></button>
+  <button data-scr="saved"><i data-ic="saved"></i><span>保存</span></button>
+  <button data-scr="files"><i data-ic="files"></i><span>ファイル</span></button>
+  <button data-scr="search"><i data-ic="search"></i><span>検索</span></button>
+  <button data-scr="runs"><i data-ic="runs"></i><span>AI会話</span></button>
+  <button data-scr="set"><i data-ic="set"></i><span>設定</span></button>
 </nav>
 <script>
 var TOKEN = location.pathname.split('/').filter(Boolean)[1] || '';
@@ -299,6 +304,31 @@ document.getElementById('recordsLink').href = APP_ROOT;
 
 function el(id){return document.getElementById(id)}
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+// ── アイコン(絵文字を廃し、統一SVGラインアイコンに) ──
+var ICONS={
+home:'<path d="M3 10.6 12 3.2l9 7.4"/><path d="M5.2 9.6V20a1 1 0 0 0 1 1h11.6a1 1 0 0 0 1-1V9.6"/><path d="M9.6 21v-6.2h4.8V21"/>',
+chat:'<path d="M20.5 15.2a1.9 1.9 0 0 1-1.9 1.9H8l-4.5 3.6V4.9A1.9 1.9 0 0 1 5.4 3h13.2a1.9 1.9 0 0 1 1.9 1.9z"/>',
+dec:'<circle cx="12" cy="12" r="8.6"/><path d="m8.4 12.2 2.6 2.6 4.6-5"/>',
+saved:'<rect x="3.2" y="4" width="17.6" height="4.2" rx="1.2"/><path d="M5 8.4V19a1.2 1.2 0 0 0 1.2 1.2h11.6A1.2 1.2 0 0 0 19 19V8.4"/><path d="M10 12h4"/>',
+files:'<path d="M20.9 11.5 12 20.4a4.6 4.6 0 0 1-6.5-6.5l8.3-8.3a3.1 3.1 0 0 1 4.4 4.4l-8.3 8.3a1.6 1.6 0 0 1-2.2-2.2l7.6-7.6"/>',
+search:'<circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4.2-4.2"/>',
+runs:'<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="12" r="2.6"/><path d="M8.6 6H14a3 3 0 0 1 3 3v.4M8.6 18H14a3 3 0 0 0 3-3v-.4"/>',
+set:'<line x1="20" y1="7.5" x2="10" y2="7.5"/><line x1="6" y1="7.5" x2="4" y2="7.5"/><line x1="20" y1="16.5" x2="14" y2="16.5"/><line x1="10" y1="16.5" x2="4" y2="16.5"/><circle cx="8" cy="7.5" r="2.2"/><circle cx="12" cy="16.5" r="2.2"/>',
+menu:'<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>',
+close:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+attach:'<path d="M20.9 11.5 12 20.4a4.6 4.6 0 0 1-6.5-6.5l8.3-8.3a3.1 3.1 0 0 1 4.4 4.4l-8.3 8.3a1.6 1.6 0 0 1-2.2-2.2l7.6-7.6"/>',
+propose:'<path d="M18.5 20.5 12 16l-6.5 4.5V5.4A2 2 0 0 1 7.5 3.4h5"/><line x1="18" y1="3.2" x2="18" y2="9.2"/><line x1="15" y1="6.2" x2="21" y2="6.2"/>',
+delegate:'<path d="M14.6 6.4a3.4 3.4 0 0 0-4.7 4.7L4 17v3h3l5.9-5.9a3.4 3.4 0 0 0 4.7-4.7l-2.4 2.4-2.3-2.3z"/>',
+report:'<rect x="8" y="3.2" width="8" height="4" rx="1.2"/><path d="M16 5.2h2a2 2 0 0 1 2 2v11.6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7.2a2 2 0 0 1 2-2h2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>',
+book:'<path d="M4.5 19.2A2.3 2.3 0 0 1 6.8 17H20"/><path d="M6.8 3H20v18H6.8A2.3 2.3 0 0 1 4.5 18.7V5.3A2.3 2.3 0 0 1 6.8 3z"/>',
+install:'<path d="M12 3.5v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M5 20.5h14"/>',
+bell:'<path d="M6 9.5a6 6 0 0 1 12 0c0 6 2.6 7.6 2.6 7.6H3.4S6 15.5 6 9.5"/><path d="M9.8 20.5a2.3 2.3 0 0 0 4.4 0"/>',
+check:'<path d="M20 6.5 9.2 17.3 4 12.1"/>',
+warn:'<path d="M12 3.5 21 19H3z"/><line x1="12" y1="10" x2="12" y2="14.4"/><line x1="12" y1="17" x2="12" y2="17.2"/>'
+};
+function svg(name,cls){return '<svg class="ic'+(cls?' '+cls:'')+'" viewBox="0 0 24 24" aria-hidden="true">'+(ICONS[name]||'')+'</svg>';}
+function renderIcons(root){var ns=(root||document).querySelectorAll('i[data-ic]');Array.prototype.forEach.call(ns,function(n){if(n.getAttribute('data-done'))return;n.setAttribute('data-done','1');n.innerHTML=svg(n.getAttribute('data-ic'));});}
 function api(path, opts){
   return fetch(API + path, Object.assign({headers:{'content-type':'application/json'}}, opts||{}))
     .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})});
@@ -310,7 +340,7 @@ el('scrim').onclick=function(){openDrawer(false)};
 function updateBanner(stub){
   if(stub){
     el('banner').style.display='block';
-    el('banner').textContent='⚠ LLM未接続: 今はスタブ応答です。GEMINI_API_KEY / ANTHROPIC_API_KEY などを設定すると実際に思考します。';
+    el('banner').textContent='LLM未接続: 今はスタブ応答です。GEMINI_API_KEY / ANTHROPIC_API_KEY などを設定すると実際に思考します。';
   } else {
     el('banner').style.display='none';
   }
@@ -326,11 +356,11 @@ function loadChats(){
     d.chats.forEach(function(c){
       var div=document.createElement('div');
       div.className='chatitem'+(c.id===current?' active':'');
-      var proj = c.project ? '📁'+esc(c.project) : '📁 未分類';
+      var proj = c.project ? esc(c.project) : '未分類';
       div.innerHTML='<div class="t">'+esc(c.title)+'<div class="cnt">'+(c.message_count||0)+' メッセージ · '+proj+'</div></div>';
-      var pj=document.createElement('button'); pj.className='del'; pj.textContent='📁'; pj.title='プロジェクトに割り当て';
+      var pj=document.createElement('button'); pj.className='del'; pj.innerHTML=svg('saved'); pj.title='プロジェクトに割り当て';
       pj.onclick=function(e){e.stopPropagation();var name=prompt('プロジェクト名(空欄で未分類に戻す)',c.project||'');if(name===null)return;api('/chats/'+c.id,{method:'PATCH',body:JSON.stringify({project:name})}).then(function(){loadChats()}).catch(function(err){alert(err.message)})};
-      var del=document.createElement('button'); del.className='del'; del.textContent='🗑';
+      var del=document.createElement('button'); del.className='del'; del.innerHTML='<svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'; del.title='削除';
       del.onclick=function(e){e.stopPropagation();if(confirm('この会話を削除しますか？'))api('/chats/'+c.id,{method:'DELETE'}).then(function(){if(current===c.id){current=null;renderMessages([]);el('subtitle').textContent='メンターと議論する';el('fileStrip').style.display='none';el('fileStrip').innerHTML=''}loadChats()})};
       div.querySelector('.t').onclick=function(){openChat(c.id,c.title)};
       div.appendChild(pj); div.appendChild(del);
@@ -343,7 +373,7 @@ function loadChats(){
 function msgNode(m){
   if(m.role==='monitor'){
     var mon=document.createElement('div'); mon.className='mon';
-    mon.innerHTML='<span class="ml">🛡 特命監視官</span>'+esc(m.content);
+    mon.innerHTML='<span class="ml">'+svg('warn')+' 特命監視官</span>'+esc(m.content);
     addMsgActions(mon, m, false);
     return mon;
   }
@@ -357,11 +387,11 @@ function msgNode(m){
 // 各メッセージに「コピー」、自分の発言には「編集」を付ける
 function addMsgActions(container, m, canEdit){
   var bar=document.createElement('div'); bar.className='mact';
-  var cp=document.createElement('button'); cp.textContent='⧉ コピー';
+  var cp=document.createElement('button'); cp.textContent='コピー';
   cp.onclick=function(){ copyText(m.content, cp); };
   bar.appendChild(cp);
   if(canEdit && m.id){
-    var ed=document.createElement('button'); ed.textContent='✏️ 編集';
+    var ed=document.createElement('button'); ed.textContent='編集';
     ed.onclick=function(){ startEditMsg(container, m); };
     bar.appendChild(ed);
   }
@@ -401,7 +431,7 @@ function startEditMsg(container, m){
 function renderMessages(msgs){
   var box=el('msgs'); box.innerHTML='';
   if(!msgs.length){
-    box.innerHTML='<div class="empty"><div style="font-size:34px">🧭</div>共同創業者としてのメンターが、YESマンにならず率直に議論します。<br>まず相談したいことを送ってください。</div>';
+    box.innerHTML='<div class="empty"><div style="color:var(--accent)"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg></div>共同創業者としてのメンターが、YESマンにならず率直に議論します。<br>まず相談したいことを送ってください。</div>';
     return;
   }
   msgs.forEach(function(m){ if(m.role==='system')return; box.appendChild(msgNode(m)); });
@@ -475,13 +505,13 @@ inp.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.pr
 
 // ── 保存候補(記録官)──
 function cardHtml(c){
-  return '<div class="ch">📝 保存候補 · '+esc(c.kind)+'</div>'+
+  return '<div class="ch">保存候補 · '+esc(c.kind)+'</div>'+
     '<div class="ct">'+esc(c.title)+'</div>'+
     (c.content?'<div class="cb">'+esc(c.content)+'</div>':'')+
     (c.summary?'<div class="cs">要約: '+esc(c.summary)+'</div>':'')+
     (c.tags?'<div class="cs">#'+esc(c.tags).split(',').join(' #')+'</div>':'')+
     (c.supersedes_id?'<div class="cs">既存の決定 #'+c.supersedes_id+' を更新</div>':'')+
-    (c.mentor_note?'<div class="cs" style="color:var(--accent);margin-top:6px">🧭 メンター確認: '+esc(c.mentor_note)+'</div>':'')+
+    (c.mentor_note?'<div class="cs" style="color:var(--accent);margin-top:6px">メンター確認: '+esc(c.mentor_note)+'</div>':'')+
     '<div class="ca"><button class="approve">承認して保存</button><button class="reject">却下</button></div>';
 }
 function wireCard(card,c){
@@ -499,15 +529,15 @@ function decide(card,cid,act){
   var btns=card.querySelectorAll('button'); Array.prototype.forEach.call(btns,function(b){b.disabled=true});
   api('/candidates/'+cid+'/'+act,{method:'POST',body:JSON.stringify({reason:reason})}).then(function(r){
     card.classList.add('done');
-    if(act!=='approve'){ card.innerHTML='<div class="ch">🚫 却下事項に記録しました'+(reason?'（理由: '+esc(reason)+'）':'')+'</div>'; return; }
-    card.innerHTML='<div class="ch">✅ 決定事項に保存しました (Active)</div>';
+    if(act!=='approve'){ card.innerHTML='<div class="ch">却下事項に記録しました'+(reason?'（理由: '+esc(reason)+'）':'')+'</div>'; return; }
+    card.innerHTML='<div class="ch">'+svg('check')+' 決定事項に保存しました (Active)</div>';
     // 憲法 Rule 4: 決定したらすぐ実行に落とせるように
     if(r.memory&&r.memory.id){
       var tb=document.createElement('button'); tb.className='approve'; tb.style.marginTop='8px'; tb.textContent='▶ 実行タスクにする';
       tb.onclick=function(){
         tb.disabled=true; tb.textContent='作成中…';
         api('/decisions/'+r.memory.id+'/task',{method:'POST'}).then(function(tr){
-          tb.textContent='✅ タスク作成: '+tr.task.title;
+          tb.textContent='タスク作成: '+tr.task.title;
         }).catch(function(e){alert(e.message);tb.disabled=false;tb.textContent='▶ 実行タスクにする'});
       };
       card.appendChild(tb);
@@ -565,7 +595,7 @@ function renderDec(tab){
     return;
   }
   var list = tab==='archived' ? (decData.archived||[]) : (decData.active||[]);
-  if(!list.length){body.innerHTML='<div class="empty2">'+(tab==='archived'?'アーカイブされた決定はありません。':'有効な決定はまだありません。<br>会話で結論を出して 📝 で記録してください。')+'</div>';return;}
+  if(!list.length){body.innerHTML='<div class="empty2">'+(tab==='archived'?'アーカイブされた決定はありません。':'有効な決定はまだありません。<br>会話で結論を出し、記録ボタンで残してください。')+'</div>';return;}
   body.innerHTML='';
   list.forEach(function(m){
     var d=document.createElement('div'); d.className='dec'+(tab==='archived'?' arch':'');
@@ -620,14 +650,14 @@ function loadDecisionDetail(id){
     sec2.innerHTML='<h3>元チャット(作成経緯)</h3>';
     if(d.sourceChat){
       var sc=d.sourceChat;
-      sec2.appendChild(hrow('💬 '+sc.title, sc.candidate_created_at, function(){showScreen('chat');openChat(sc.chat_id, sc.title)}));
+      sec2.appendChild(hrow(sc.title, sc.candidate_created_at, function(){showScreen('chat');openChat(sc.chat_id, sc.title)}));
     } else {var e2=document.createElement('div');e2.className='hcard';e2.style.color='var(--muted)';e2.style.fontSize='13px';e2.textContent='元チャットの記録はありません(会話以外から保存された決定)';sec2.appendChild(e2);}
     body.appendChild(sec2);
     // 実行タスク(憲法 Rule 4: アイデアより実行)
     var sec4=document.createElement('div'); sec4.className='home-sec';
     sec4.innerHTML='<h3>実行タスク</h3>';
     (d.tasks||[]).forEach(function(t){
-      var mark = t.status==='done' ? '✅ ' : '⬜ ';
+      var mark = t.status==='done' ? '✓ ' : '· ';
       sec4.appendChild(hrow(mark+t.title, t.status + (t.due_date?' / 期限 '+t.due_date:''), null));
     });
     var tbtn=document.createElement('button'); tbtn.className='primary'; tbtn.textContent='▶ この決定をタスクにする';
@@ -635,7 +665,7 @@ function loadDecisionDetail(id){
     tbtn.onclick=function(){
       tbtn.disabled=true; tbtn.textContent='作成中…';
       api('/decisions/'+id+'/task',{method:'POST'}).then(function(r){
-        tbtn.textContent='✅ タスクを作成しました('+esc(r.task.title)+')';
+        tbtn.textContent='タスクを作成しました('+esc(r.task.title)+')';
         loadDecisionDetail(id);
       }).catch(function(e){alert(e.message);tbtn.disabled=false;tbtn.textContent='▶ この決定をタスクにする'});
     };
@@ -671,18 +701,18 @@ function runSearch(){
     body.appendChild(sum);
     if(!total){body.appendChild(Object.assign(document.createElement('div'),{className:'empty2',textContent:'見つかりませんでした。'}));return;}
     if(r.chats.length){
-      var s1=document.createElement('div'); s1.className='home-sec'; s1.innerHTML='<h3>💬 チャット</h3>';
+      var s1=document.createElement('div'); s1.className='home-sec'; s1.innerHTML='<h3>チャット</h3>';
       r.chats.forEach(function(c){ s1.appendChild(hrow(c.title+' — '+c.snippet, c.created_at, function(){showScreen('chat');openChat(c.chat_id, c.title)})); });
       body.appendChild(s1);
     }
     if(r.decisions.length){
-      var s2=document.createElement('div'); s2.className='home-sec'; s2.innerHTML='<h3>📌 決定事項</h3>';
+      var s2=document.createElement('div'); s2.className='home-sec'; s2.innerHTML='<h3>決定事項</h3>';
       r.decisions.forEach(function(dd){ s2.appendChild(hrow((dd.status==='archived'?'(旧) ':'')+dd.title+' — '+dd.snippet, dd.created_at, function(){loadDecisionDetail(dd.id)})); });
       body.appendChild(s2);
     }
     if(r.ailogs.length){
-      var s3=document.createElement('div'); s3.className='home-sec'; s3.innerHTML='<h3>🗂 AI会話ログ</h3>';
-      r.ailogs.forEach(function(a){ s3.appendChild(hrow('🛠 '+a.task+' — '+a.snippet, a.created_at, function(){showScreen('runs')})); });
+      var s3=document.createElement('div'); s3.className='home-sec'; s3.innerHTML='<h3>AI会話ログ</h3>';
+      r.ailogs.forEach(function(a){ s3.appendChild(hrow(a.task+' — '+a.snippet, a.created_at, function(){showScreen('runs')})); });
       body.appendChild(s3);
     }
   }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
@@ -694,7 +724,7 @@ el('searchClose').onclick=function(){showScreen('chat')};
 // ── 作業AI(委任 + AI会話ログ)──
 function workLogNode(log){
   var d=document.createElement('details'); d.className='worklog';
-  var inner='<summary>🛠 作業AI会話ログ（'+log.length+'ターン・閲覧専用） ▼</summary><div class="wl">';
+  var inner='<summary>作業AI会話ログ（'+log.length+'ターン・閲覧専用）</summary><div class="wl">';
   log.forEach(function(m){ inner+='<div class="wmsg"><div class="wn">'+esc(m.name||m.role)+'</div><div class="wc">'+esc(m.content)+'</div></div>'; });
   inner+='</div>'; d.innerHTML=inner; return d;
 }
@@ -709,7 +739,7 @@ function delegate(){
   var row=document.createElement('div'); row.className='row user';
   row.innerHTML='<div class="who">あなた → 作業AI</div><div class="bubble">'+esc(text)+'</div>';
   box.appendChild(row);
-  var note=document.createElement('div'); note.className='typing'; note.id='wtyping'; note.textContent='🛠 作業AIが検討中…（メンターが整理します）';
+  var note=document.createElement('div'); note.className='typing'; note.id='wtyping'; note.textContent='作業AIが検討中…（メンターが整理します）';
   box.appendChild(note); box.scrollTop=box.scrollHeight;
   api('/chats/'+current+'/delegate',{method:'POST',body:JSON.stringify({task:text})}).then(function(d){
     var t=el('wtyping'); if(t)t.remove();
@@ -726,12 +756,12 @@ function makeReport(){
   if(current==null){alert('先に会話を始めてください');return;}
   var rb=el('reportBtn'); rb.disabled=true;
   var box=el('msgs'); if(box.querySelector('.empty'))box.innerHTML='';
-  var note=document.createElement('div'); note.className='typing'; note.id='rtyping'; note.textContent='📋 監視官がレポートを作成中…';
+  var note=document.createElement('div'); note.className='typing'; note.id='rtyping'; note.textContent='監視官がレポートを作成中…';
   box.appendChild(note); box.scrollTop=box.scrollHeight;
   api('/chats/'+current+'/report',{method:'POST'}).then(function(r){
     var t=el('rtyping'); if(t)t.remove();
     var mon=document.createElement('div'); mon.className='mon';
-    mon.innerHTML='<span class="ml">📋 特命監視官レポート</span>'+esc(r.report.content);
+    mon.innerHTML='<span class="ml">'+svg('report')+' 特命監視官レポート</span>'+esc(r.report.content);
     box.appendChild(mon); box.scrollTop=box.scrollHeight;
   }).catch(function(e){var t=el('rtyping');if(t)t.remove();alert(e.message)}).then(function(){rb.disabled=false});
 }
@@ -741,18 +771,18 @@ el('runClose').onclick=function(){showScreen('chat')};
 function loadRuns(){
   el('runBody').innerHTML='<div class="empty2">読み込み中…</div>';
   api('/runs').then(function(d){
-    if(!d.runs.length){el('runBody').innerHTML='<div class="empty2">作業AIのログはまだありません。<br>会話で 🛠 からタスクを振ると、ここに残ります。</div>';return;}
+    if(!d.runs.length){el('runBody').innerHTML='<div class="empty2">作業AIのログはまだありません。<br>会話で作業AIにタスクを振ると、ここに残ります。</div>';return;}
     var body=el('runBody'); body.innerHTML='';
     d.runs.forEach(function(r){
       var det=document.createElement('details'); det.className='worklog'; det.style.marginBottom='10px';
-      det.innerHTML='<summary>🛠 '+esc(r.task)+'<br><span style="font-size:11px;opacity:.7">'+esc(r.created_at)+' · '+esc(r.status)+'</span></summary><div class="wl"><div class="empty2" style="padding:10px">開いて読み込み中…</div></div>';
+      det.innerHTML='<summary>'+esc(r.task)+'<br><span style="font-size:11px;opacity:.7">'+esc(r.created_at)+' · '+esc(r.status)+'</span></summary><div class="wl"><div class="empty2" style="padding:10px">開いて読み込み中…</div></div>';
       det.addEventListener('toggle',function(){
         if(det.open && det.dataset.loaded!=='1'){
           det.dataset.loaded='1';
           api('/runs/'+r.id).then(function(rd){
             var wl=det.querySelector('.wl'); wl.innerHTML='';
             rd.log.forEach(function(m){ var x=document.createElement('div'); x.className='wmsg'; x.innerHTML='<div class="wn">'+esc(m.name||m.role)+'</div><div class="wc">'+esc(m.content)+'</div>'; wl.appendChild(x); });
-            if(rd.run&&rd.run.summary){ var s=document.createElement('div'); s.className='wmsg'; s.innerHTML='<div class="wn">🧭 メンター整理（ユーザーへ提示）</div><div class="wc">'+esc(rd.run.summary)+'</div>'; wl.appendChild(s); }
+            if(rd.run&&rd.run.summary){ var s=document.createElement('div'); s.className='wmsg'; s.innerHTML='<div class="wn">メンター整理（ユーザーへ提示）</div><div class="wc">'+esc(rd.run.summary)+'</div>'; wl.appendChild(s); }
           }).catch(function(e){det.querySelector('.wl').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
         }
       });
@@ -769,7 +799,7 @@ var PROV_JA={anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',gemini:'Google
 function keyRow(p, info){
   var box=document.createElement('div'); box.className='role';
   var state = info.set
-    ? '✅ 接続中 (…'+esc(info.tail)+(info.source==='db'?' / ⚙️で登録':' / Cloudflare Secret')+')'
+    ? '接続中 (…'+esc(info.tail)+(info.source==='db'?' / 設定で登録':' / Cloudflare Secret')+')'
     : '— 未接続';
   box.innerHTML='<h4>'+esc(PROV_JA[p]||p)+' <span class="dm" style="font-weight:normal">'+state+'</span></h4>'+
     '<div class="r"><input type="password" placeholder="APIキーを貼り付け" autocomplete="off"></div>'+
@@ -812,16 +842,16 @@ function loadBackup(){
     var box=document.createElement('div'); box.className='role'; box.style.marginTop='16px';
     var last=d.last;
     var lastLine = last
-      ? (last.ok ? '✅ 最終バックアップ: '+esc(last.at)+' ('+esc(String(last.users))+'ユーザー / '+Math.round(last.bytes/1024)+'KB)' : '⚠ 前回: '+esc(last.error||'失敗'))
+      ? (last.ok ? '最終バックアップ: '+esc(last.at)+' ('+esc(String(last.users))+'ユーザー / '+Math.round(last.bytes/1024)+'KB)' : '前回: '+esc(last.error||'失敗'))
       : 'まだ実行されていません';
     var setup = d.enabled ? '' :
-      '<div class="dm" style="margin-top:8px;line-height:1.7">自動保存を有効にするには: Cloudflare で R2 バケット <b>dscribe-backup</b> を作成 → wrangler.toml の [[r2_buckets]] のコメントを外して再デプロイ。未設定でも毎週の実行記録だけは残ります(📤の手動エクスポートは常に使えます)。</div>';
-    box.innerHTML='<h4>💾 バックアップ <span class="dm" style="font-weight:normal">'+(d.enabled?'R2接続済み・毎週月曜に自動実行':'R2未設定')+'</span></h4>'+
+      '<div class="dm" style="margin-top:8px;line-height:1.7">自動保存を有効にするには: Cloudflare で R2 バケット <b>dscribe-backup</b> を作成 → wrangler.toml の [[r2_buckets]] のコメントを外して再デプロイ。未設定でも毎週の実行記録だけは残ります(手動エクスポートは常に使えます)。</div>';
+    box.innerHTML='<h4>バックアップ <span class="dm" style="font-weight:normal">'+(d.enabled?'R2接続済み・毎週月曜に自動実行':'R2未設定')+'</span></h4>'+
       '<div class="dm">'+lastLine+'</div>'+setup+
       '<button class="save" id="backupNow" style="margin-top:10px">今すぐバックアップ</button>'+
       '<hr style="border:none;border-top:1px solid var(--line);margin:14px 0">'+
-      '<h4>♻ 復元(バックアップから)</h4>'+
-      '<div class="dm" style="margin-bottom:8px">📤でダウンロードしたJSONを選ぶと、中のチャットを<b>追記で</b>復元します(既存データは消しません・オーナーのみ)。</div>'+
+      '<h4>復元(バックアップから)</h4>'+
+      '<div class="dm" style="margin-bottom:8px">エクスポートでダウンロードしたJSONを選ぶと、中のチャットを<b>追記で</b>復元します(既存データは消しません・オーナーのみ)。</div>'+
       '<input type="file" id="restoreFile" accept="application/json,.json">'+
       '<div id="restoreMsg" class="dm" style="margin-top:8px"></div>';
     card.appendChild(box);
@@ -843,7 +873,7 @@ function loadBackup(){
           if(!confirm('復元プレビュー: チャット'+p.chats+'件 / メッセージ'+p.messages+'件を追記します。よろしいですか？')){msg.textContent='キャンセルしました';return;}
           msg.textContent='復元中…';
           api('/restore',{method:'POST',body:JSON.stringify({backup:backup,confirm:true})}).then(function(rr){
-            msg.textContent='✅ 復元しました: チャット'+rr.restored.chats+'件 / メッセージ'+rr.restored.messages+'件';
+            msg.textContent='復元しました: チャット'+rr.restored.chats+'件 / メッセージ'+rr.restored.messages+'件';
             loadChats();
           }).catch(function(e){msg.textContent='エラー: '+e.message});
         }).catch(function(e){msg.textContent='エラー: '+e.message});
@@ -856,7 +886,7 @@ function loadPrefs(){
   var card=el('prefsCard'); if(!card)return;
   api('/prefs').then(function(d){
     var on=(d.prefs||{}).auto_report==='on';
-    card.innerHTML='<div class="role" style="margin-top:16px"><h4>📋 節目レポートの自動生成 <span class="dm" style="font-weight:normal">'+(on?'ON':'OFF')+'</span></h4>'+
+    card.innerHTML='<div class="role" style="margin-top:16px"><h4>節目レポートの自動生成 <span class="dm" style="font-weight:normal">'+(on?'ON':'OFF')+'</span></h4>'+
       '<div class="dm" style="margin-bottom:8px">決定を承認したとき、監視官が節目レポート(議題・未解決・決定・逸脱傾向)を自動でまとめます。<b>1回ぶんのLLMを消費</b>します。既定はOFF。</div>'+
       '<button class="save" id="arToggle">'+(on?'自動生成をOFFにする':'自動生成をONにする')+'</button></div>';
     el('arToggle').onclick=function(){
@@ -977,7 +1007,7 @@ function fileHref(f){return API+'/files/'+f.id;}
 function fileChip(f){
   var href=fileHref(f);
   if(f.mime.indexOf('image/')===0) return '<a class="fchip" href="'+href+'" target="_blank" rel="noopener"><img src="'+href+'" alt="'+esc(f.name)+'"></a>';
-  return '<a class="fchip doc" href="'+href+'" target="_blank" rel="noopener">📄 '+esc(f.name)+'</a>';
+  return '<a class="fchip doc" href="'+href+'" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24" style="vertical-align:-.16em"><path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><path d="M13 3v6h6"/></svg> '+esc(f.name)+'</a>';
 }
 // チャット下の添付ストリップ(このチャットのファイル)
 function loadFileStrip(chatId){
@@ -991,7 +1021,7 @@ function loadFileStrip(chatId){
 function loadFiles(){
   var body=el('filesBody'); body.innerHTML='<div class="empty2">読み込み中…</div>';
   api('/files').then(function(d){
-    if(!d.files.length){body.innerHTML='<div class="empty2">まだファイルはありません。<br>チャットの 📎、または上の「＋」から写真・書類を追加できます。</div>';return;}
+    if(!d.files.length){body.innerHTML='<div class="empty2">まだファイルはありません。<br>チャットの添付ボタン、または上の「＋」から写真・書類を追加できます。</div>';return;}
     body.innerHTML='';
     d.files.forEach(function(f){
       var href=fileHref(f), isImg=f.mime.indexOf('image/')===0;
@@ -1012,7 +1042,7 @@ el('fileInput').onchange=function(){ var f=el('fileInput').files[0]; el('fileInp
 el('filesAdd').onclick=function(){ el('fileInput').click(); };
 function renderMemCard(m, box){
   var d=document.createElement('div'); d.className='dec';
-  var kindJa = m.kind==='note'?'📝 メモ':'💭 記憶';
+  var kindJa = m.kind==='note'?'メモ':'記憶';
   d.innerHTML='<span class="badge active">'+kindJa+'</span><span class="dm">'+esc(m.created_at||'')+(m.project?' / '+esc(m.project):'')+'</span>'+
     (m.title?'<div class="dt">'+esc(m.title)+'</div>':'')+
     '<div class="db">'+esc(m.content||'')+'</div>'+
@@ -1050,17 +1080,17 @@ function openProject(name){
     body.innerHTML='';
     var back=document.createElement('button'); back.textContent='← ホームに戻る'; back.style.marginBottom='12px'; back.onclick=loadHome;
     body.appendChild(back);
-    var h=document.createElement('h2'); h.textContent='📁 '+name+(st.status==='archived'?' ✅完了':''); h.style.margin='0 0 12px'; h.style.fontSize='18px'; body.appendChild(h);
+    var h=document.createElement('h2'); h.textContent=name+(st.status==='archived'?' · 完了':''); h.style.margin='0 0 12px'; h.style.fontSize='18px'; h.style.fontFamily='var(--serif)'; h.style.fontWeight='700'; body.appendChild(h);
     // 最終報告(完了済みなら表示)
     if(st.status==='archived'&&st.final_report){
       var fr=document.createElement('div'); fr.className='mon'; fr.style.alignSelf='stretch'; fr.style.maxWidth='100%'; fr.style.marginBottom='12px';
-      fr.innerHTML='<span class="ml">📄 最終報告</span>'+esc(st.final_report);
+      fr.innerHTML='<span class="ml">最終報告</span>'+esc(st.final_report);
       body.appendChild(fr);
     }
     // 完了 / 再開ボタン(運用第9章)
     var pbtn=document.createElement('button'); pbtn.style.width='100%'; pbtn.style.marginBottom='12px';
-    if(st.status==='archived'){ pbtn.textContent='↩ このプロジェクトを再開'; pbtn.onclick=function(){api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'reopen'})}).then(function(){openProject(name)}).catch(function(e){alert(e.message)})}; }
-    else { pbtn.className='primary'; pbtn.textContent='✅ プロジェクトを完了(最終報告を作成)'; pbtn.onclick=function(){if(!confirm('このプロジェクトを完了しますか？現行の決定から最終報告を作成します。'))return;pbtn.disabled=true;pbtn.textContent='最終報告を作成中…';api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'complete'})}).then(function(){openProject(name)}).catch(function(e){alert(e.message);pbtn.disabled=false})}; }
+    if(st.status==='archived'){ pbtn.textContent='このプロジェクトを再開'; pbtn.onclick=function(){api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'reopen'})}).then(function(){openProject(name)}).catch(function(e){alert(e.message)})}; }
+    else { pbtn.className='primary'; pbtn.textContent='プロジェクトを完了(最終報告を作成)'; pbtn.onclick=function(){if(!confirm('このプロジェクトを完了しますか？現行の決定から最終報告を作成します。'))return;pbtn.disabled=true;pbtn.textContent='最終報告を作成中…';api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'complete'})}).then(function(){openProject(name)}).catch(function(e){alert(e.message);pbtn.disabled=false})}; }
     body.appendChild(pbtn);
     var s1=document.createElement('div'); s1.className='home-sec'; s1.innerHTML='<h3>チャット</h3>';
     if(!chats.length){s1.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">このプロジェクトのチャットはありません</div>';}
@@ -1106,7 +1136,7 @@ function loadHome(){
       var secP=document.createElement('div'); secP.className='home-sec';
       secP.innerHTML='<h3>プロジェクト</h3>';
       projects.forEach(function(p){
-        secP.appendChild(hrow('📁 '+p.name, (p.os_chats||0)+'会話 / 決定'+(p.active_decisions||0), function(){openProject(p.name)}));
+        secP.appendChild(hrow(p.name, (p.os_chats||0)+'会話 / 決定'+(p.active_decisions||0), function(){openProject(p.name)}));
       });
       body.appendChild(secP);
     }
@@ -1130,16 +1160,16 @@ function loadHome(){
     var warns=(notif.warnings||[]).filter(function(w){return /\[(deviation|loop|contradiction|drift)\]/.test(w.content)});
     var reps=notif.reports||[];
     var sec5=document.createElement('div'); sec5.className='home-sec';
-    sec5.innerHTML='<h3>🔔 通知（監視官）</h3>';
+    sec5.innerHTML='<h3>通知（監視官）</h3>';
     if(!warns.length&&!reps.length){var e5=document.createElement('div');e5.className='hcard';e5.style.color='var(--muted)';e5.style.fontSize='13px';e5.textContent='新しい通知はありません';sec5.appendChild(e5);}
     reps.slice(0,3).forEach(function(r){
       var d=document.createElement('div'); d.className='mon'; d.style.alignSelf='stretch'; d.style.maxWidth='100%'; d.style.marginBottom='8px';
-      d.innerHTML='<span class="ml">📋 節目レポート · '+esc(r.created_at)+'</span>'+esc(r.content);
+      d.innerHTML='<span class="ml">'+svg('report')+' 節目レポート · '+esc(r.created_at)+'</span>'+esc(r.content);
       sec5.appendChild(d);
     });
     warns.slice(0,4).forEach(function(w){
       var d=document.createElement('div'); d.className='mon'; d.style.alignSelf='stretch'; d.style.maxWidth='100%'; d.style.marginBottom='8px';
-      d.innerHTML='<span class="ml">🛡 警告 · '+esc(w.created_at)+'</span>'+esc(w.content);
+      d.innerHTML='<span class="ml">'+svg('warn')+' 警告 · '+esc(w.created_at)+'</span>'+esc(w.content);
       sec5.appendChild(d);
     });
     body.appendChild(sec5);
@@ -1160,7 +1190,7 @@ el('installBtn').onclick=function(){
 };
 window.addEventListener('appinstalled',function(){el('installBtn').style.display='none'});
 
-renderMessages([]); loadStatus(); loadChats(); showScreen('home');
+renderIcons(); renderMessages([]); loadStatus(); loadChats(); showScreen('home');
 </script>
 </body>
 </html>`;
