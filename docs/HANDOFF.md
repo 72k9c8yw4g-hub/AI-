@@ -68,6 +68,8 @@
 - `wrangler dev` 起動時の undici/`Request.cf` エラーはこの環境では無害（ネット制限）。
 - **非ASCIIホモグリフ混入**に注意（過去にキリル文字が識別子に紛れた）。os/ 配下は python で `0x0370-0x04FF` を走査してから出す。
 - **UIの再描画レース**: 詳細ビューは `showScreen`（ローダー再実行）ではなく `activatePanel`（表示のみ切替）を使う。過去に吹き出し/詳細が消えるバグ多発。
+- **`src/os/ui.ts` はテンプレートリテラル（バッククォート）1個で全SPAを吐く**。中のJS文字列に `'\n'` と書くと**実改行に化けてJS全体が構文エラー**になる（アプリ真っ白）。改行が要るときは `String.fromCharCode(10)` を使う。tsc は通ってしまうので**必ずブラウザで pageerror が無いか確認**。
+- **ローカル検証で dev サーバを複数同時に立てない**: 同じ `--persist-to` ディレクトリに 2 つ以上の `wrangler dev` を向けると SQLite が競合して読みが不安定になる（一覧が空・送信が反映されない等）。1検証=1サーバ、ポートも persist も分ける。
 - **LLMキー**: ⚙️で登録（D1にAES-GCM暗号化保存）または `wrangler secret put`。未設定は**スタブ応答**で全フロー動く。gemini 既定は `gemini-2.5-flash`、404/429は自動フォールバック。
 - **R2バックアップはオプトイン**: `wrangler.toml` の `[[r2_buckets]]` はコメントアウト。バケット `dscribe-backup` を作ってからコメント解除しないとデプロイが落ちる。
 - **1日500回のLLM上限**（os_llm_usage）。send=2/propose=1/委任=4/report=1 消費。
@@ -97,21 +99,27 @@
 |---|---|---|
 | `os_chats` | プロジェクト配下の会話スレッド | `project_id`(→projects), `title` |
 | `os_messages` | 1メッセージ=1行 | `role`(user/mentor/monitor/recorder/worker/system), `content`, `seq` |
-| `os_role_config` | 役割ごとの使用モデル | PK(`user_id`,`role`), `provider`, `model` |
-| `os_candidates` | 記録官の保存候補（無承認保存禁止の実体） | `status`(pending/approved/rejected), `supersedes_id`, `memory_id`(承認時の決定ID), `chat_id`(元チャット追跡) |
+| `os_role_config` | 役割ごとの使用モデル（worker1/2/3 スロット含む） | PK(`user_id`,`role`), `provider`, `model` |
+| `os_role_keys` | 役割ごとのAPIキー上書き（空なら共有キーに落ちる） | PK(`user_id`,`role`), `key`(暗号化) |
+| `os_candidates` | 記録官の保存候補（無承認保存禁止の実体） | `status`(pending/approved/rejected), `supersedes_id`, `memory_id`, `chat_id`, **`reject_reason`**(却下事項), **`mentor_note`**(メンター確認) |
 | `os_worker_runs` | 作業AIの1アサイン | `status`(running/done/failed), `task`, `summary` |
 | `os_worker_msgs` | 作業AI同士の議論ログ（閲覧専用） | `run_id`, `role`, `content`, `seq` |
-| `os_api_keys` | ⚙️で登録する暗号化APIキー | PK(`user_id`,`provider`), `key`(AES-GCM暗号文) |
+| `os_api_keys` | ⚙️で登録する暗号化APIキー（プロバイダ別・共有） | PK(`user_id`,`provider`), `key`(AES-GCM暗号文) |
+| `os_files` | ファイル/写真（R2不使用・D1にbase64） | `chat_id`, `project`, `name`, `mime`, `data`(base64) |
 | `os_llm_usage` | 1日のLLM呼び出し回数 | PK(`user_id`,`day`), `calls` |
 | `os_reports` | 監視官の節目レポート | `chat_id`, `content` |
 | `os_project_status` | プロジェクト完了/アーカイブ + 最終報告 | PK(`user_id`,`project_id`), `status`, `final_report` |
+
+- **後付けカラムは `ensureOsSchema` の `OS_MIGRATIONS`（`ALTER TABLE ADD COLUMN` を try/catch で冪等実行）で足す**。`CREATE TABLE IF NOT EXISTS` では既存テーブルに列を追加できないため。`os_candidates.reject_reason` / `mentor_note` はこの方式で追加済み。新カラムを足すときはここに1行追加する。
 
 - 「決定事項」の実体は Dscribe 側の **`memories`**（kind=decision）。承認された候補がここに入り、`supersedes`/`superseded_by` チェーンで Active/Archived を表現（旧決定は消さずアーカイブ）。
 - 決定→タスク化は Dscribe 側の **`tasks`** に橋渡し（📌詳細の▶）。
 
 ## 11. LLMプロバイダ設定（`src/os/provider.ts`）
-- 対応: `anthropic` / `openai` / `gemini`。役割ごとに provider+model を選べる（`os_role_config`）。既定は全役割 gemini。
-- 既定モデル: anthropic=`claude-sonnet-4-20250514` / openai=`gpt-4o` / **gemini=`gemini-2.5-flash`**。
+- 対応: `anthropic` / `openai` / `gemini` / **`groq`** / **`cerebras`**。役割ごとに provider+model+キー を選べる（`os_role_config` + `os_role_keys`）。作業AIは worker1/2/3 で個別上書き可。
+- **groq/cerebras は OpenAI互換** → `callOpenAICompat`（ベースURLだけ差し替え、`OPENAI_COMPAT_BASE`）で openai と共用。groq=`https://api.groq.com/openai/v1` / cerebras=`https://api.cerebras.ai/v1`。
+- 既定モデル: anthropic=`claude-sonnet-4-20250514` / openai=`gpt-4o` / gemini=`gemini-2.5-flash` / **groq=`llama-3.3-70b-versatile`** / **cerebras=`llama-3.3-70b`**。
+- **役割別キーの狙い**: 無料枠は各社独立。監視官(毎メッセージ)を別プロバイダ/別キーに逃がすとメンターの枠を食い潰さない。無料キー: Gemini=aistudio.google.com / Groq=console.groq.com / Cerebras=cloud.cerebras.ai（いずれもカード不要）。
 - **`resolveModel` の自己修復**: provider と model がちぐはぐ（例: provider=gemini なのに model がclaude名）なら既定modelに落とす。過去の404の主因。
 - **gemini 自動フォールバック**: 404/429 時に `["gemini-flash-latest","gemini-2.5-flash","gemini-2.5-flash-lite","gemini-2.0-flash"]` から順に2つまで再試行。`gemini-2.0-flash` は無料枠が無いことがある→既定にしない。
 - gemini は `x-goog-api-key` ヘッダ。全fetchに `AbortSignal.timeout`（軽い処理15s / 生成60s）。
@@ -119,7 +127,7 @@
 - キーは ⚙️（D1にAES-GCM暗号化）または `wrangler secret put`。**チャットに生キーを貼らせない**運用。
 
 ## 12. コスト上限（`consumeLlmBudget` / `DAILY_LLM_LIMIT=500`）
-1日500回/ユーザー。消費内訳: **送信(send)=2**（メンター+監視官）/ **記録官propose=1** / **作業AI委任delegate=4** / **節目report=1** / **プロジェクト最終報告=1**。超過は例外で弾く（暴走・トークン漏洩時の焼き尽くし対策）。
+1日500回/ユーザー。消費内訳: **送信(send)=2**（メンター+監視官）/ **propose=2**（記録官+メンター確認）/ **作業AI委任delegate=4** / **節目report=1** / **プロジェクト最終報告=1**。超過は例外で弾く（暴走・トークン漏洩時の焼き尽くし対策）。
 
 ## 13. 主要な設計判断（なぜこうなっているか）
 - **独立アプリ本建築（Route C）を選択**: Dscribe に相乗りではなく `/os` に独立SPA。理由=意思決定OSは役職・承認・監視という別ドメインで、Dscribe(第二の脳)の閲覧UIとは要求が違うため。データ層(D1)だけ共有し、決定=memories・タスク=tasks を再利用。
@@ -144,3 +152,14 @@
 - ローカル: `rm -rf .wrangler/state && npm run dev` → `/setup` でオーナー作成 → 返るトークンで `/os/<token>`。REST は `/api/<token>/os/...` を curl 駆動。
 - スクショ検証: Playwright(`playwright-core` を `npm i -D --no-save`)、Chromium=`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`、`--no-sandbox`、スマホ390px / PC1280px。
 - cron: `npx wrangler dev --test-scheduled` → `curl "http://127.0.0.1:8787/__scheduled?cron=0%209%20*%20*%201"`。
+- Playwright は ESM で `import pkg from '/abs/path/playwright-core/index.js'; const {chromium}=pkg;`（bare指定/名前付きimportは解決失敗する）。ホームパネルが被って要素が「visible待ち」で固まるので、送信系は先に `#osnav button[data-scr="chat"]` を押してチャット表示に切り替える。
+
+## 16. このセッションで追加した機能（設計書の細部を本実装）
+「側(ガワ)はできた、細部をちゃんと本実装」フェーズで、以下を実装・本番反映済み（すべて `/os`）:
+1. **役割別APIキー + 作業AI 1/2/3 の個別モデル**（技術第4-5章/実装第14章）: `os_role_keys`・worker1/2/3 スロット・`resolveRoleCall`/`resolveWorkerCall`（役割キー→共有キー→env）。空欄なら共有キーに落ちる非破壊。
+2. **ファイル/写真の追加**（実装第3章）: `os_files`（D1にbase64・R2不使用）。📎添付+📎ファイルタブ。画像はブラウザ側で1600px/JPEGに縮小。上限≈525KB。
+3. **メッセージの編集(自分の発言のみ・非破壊) + コピー(全メッセージ)**: `PATCH /os/messages/:id`（role='user'かつ本人のみ）。
+4. **承認パイプラインの本実装**: 却下事項の記録（`reject_reason`・決定画面「却下」タブ）/ メンター確認ステップ（`mentor_note`・propose予算2）/ 記録官の候補内容を構造化（【決定】【理由】【影響範囲】）。
+5. **Groq / Cerebras プロバイダ追加**: OpenAI互換。役割ごとに無料枠を分散して制限回避。
+6. **作業AIの相談必須事項**（運用第7章）+ **プロジェクト開始フロー**（運用第3章）: org.ts のプロンプト強化。
+- **意図的に見送り中**（コスト/ノイズ増で要ユーザー判断）: 節目レポートの自動化 / 監視官の監査拡張（法律・規約・品質・セキュリティ）。やるならオン/オフ設定つきで。
