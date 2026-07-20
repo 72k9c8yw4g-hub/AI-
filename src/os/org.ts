@@ -193,31 +193,43 @@ export async function runRecorderTurn(
 }
 
 // ── 特命監視官 ──────────────────────────────────────────
-// 運用第6章: 話題逸脱・無限ループ・矛盾・離脱傾向を監査し、問題があるときだけ警告する。
-// 決定も指示もしない(警告のみ)。過剰警告は禁止。通常は沈黙(空配列)。
+// 憲法第7章/運用第6章: ループ・話題逸脱・矛盾・離脱傾向・非効率、法律・利用規約・品質・
+// セキュリティを常時監査し、問題があれば警告する(決定も指示もしない・独立監査・非中継)。
+// 頻度は絞らないが「的外れ(無関係)」は禁止。確度の高い・関連する指摘だけを出す。
 
-export type WarningType = "deviation" | "loop" | "contradiction" | "drift";
+export type WarningType =
+  | "deviation"
+  | "loop"
+  | "contradiction"
+  | "drift"
+  | "inefficiency"
+  | "legal"
+  | "tos"
+  | "quality"
+  | "security";
 export interface Warning {
   type: WarningType;
   message: string;
 }
 
-export const MONITOR_SYSTEM = `あなたは「AI意思決定OS」の特命監視官です。会話を横から監査し、問題があるときだけ警告します。決定も指示もしません(警告のみ)。
+export const MONITOR_SYSTEM = `あなたは「AI意思決定OS」の特命監視官です。会話を横から常時監査し、問題があれば警告します。決定も指示もしません(警告のみ・独立監査・非中継)。
 
-大原則: 既定は「警告しない(空配列 [])」。ユーザーの発想・雑談・新しいアイデア出しを妨げてはならない。確信が持てないものは絶対に警告しない。
+最重要ルール(的外れ禁止): 警告は「今この会話で実際に起きている、関連する問題」だけにする。無関係な過去の別トピックや別プロジェクトの話を引っ張り出さない。関係が薄い・確信が持てないものは出さない。頻度は絞らなくてよい(関連する問題が複数あれば複数出してよい)が、的外れは1件でも許されない。的外れを出すくらいなら空にする。
 
-警告タイプ(いずれも「今まさに話している内容」だけを対象にする。過去の別トピックを引っ張り出さない):
-- deviation: この会話の直前の議題から、今の発言が明らかに脱線している場合のみ
-- loop: この会話の中で、結論の出ない同じ議論を明確に繰り返している場合のみ
-- contradiction: 今の発言が、ある決定と【完全に同じ対象】について正反対のことを言っている場合のみ。
-  OK例: 決定「配送は自社便」に対し、今「配送は外注にする」と言った → contradiction
-  NG例: 決定「収益化を目指す」に対し、今「趣味のAIを作りたい」と言った → これは対象が違うので contradiction にしない。
-  ルール: 対象・テーマが一致しない決定を引き合いに出して「方針と矛盾」と広げてはならない。
-- drift: 基本的に使わない(空でよい)。
+監査タイプ(憲法第7章/運用第6章。該当が明確なものだけ):
+- deviation: 今の議題から明らかに逸脱している
+- loop: 結論の出ない同じ議論を明確に繰り返している
+- contradiction: 今の発言が、現行の決定と【完全に同じ対象】について正反対。対象・テーマが一致しない決定を引き合いに出さない(例:「収益化」の決定に「趣味AIを作る」は対象違い→矛盾にしない)
+- drift: 当初のプロジェクト目的から徐々に離れている
+- inefficiency: 明らかに非効率(堂々巡り・過剰調査・実行の先送り)
+- legal: 法的リスクがありそう(著作権・契約・法令違反の可能性)
+- tos: 使おうとしているサービスの利用規約に反しそう
+- quality: 成果物・決定の品質/完成度に見逃せない欠陥がある
+- security: セキュリティ・個人情報・秘密情報の扱いに危険がある
 
 必ず次のJSON配列だけを出力する(前後に説明文を付けない):
-[{"type":"contradiction","message":"簡潔な警告文。矛盾ならその決定の対象に具体的に触れる"}]
-問題がなければ [] を返す。多くても1件。関連の薄い決定を無理に結びつけない。`;
+[{"type":"security","message":"簡潔で具体的な警告文。何がなぜ問題かを対象に触れて書く"}]
+問題がなければ [] を返す。多くても3件。`;
 
 const NEGATION = ["やめ", "中止", "変更", "じゃない", "ではない", "違う", "無し", "なし", "取りやめ", "撤回", "やっぱり"];
 
@@ -227,7 +239,7 @@ function parseWarnings(text: string): Warning[] {
     if (!m) return [];
     const arr = JSON.parse(m[0]) as unknown;
     if (!Array.isArray(arr)) return [];
-    const valid: WarningType[] = ["deviation", "loop", "contradiction", "drift"];
+    const valid: WarningType[] = ["deviation", "loop", "contradiction", "drift", "inefficiency", "legal", "tos", "quality", "security"];
     return arr
       .map((o) => {
         const type = (o as { type?: unknown }).type;
@@ -235,7 +247,7 @@ function parseWarnings(text: string): Warning[] {
         return { type: type as WarningType, message: String(message ?? "").trim().slice(0, 300) };
       })
       .filter((w) => valid.includes(w.type) && w.message)
-      .slice(0, 2);
+      .slice(0, 3);
   } catch {
     return [];
   }
@@ -297,6 +309,11 @@ export const WARNING_LABEL: Record<WarningType, string> = {
   loop: "ループ",
   contradiction: "矛盾",
   drift: "目的離脱",
+  inefficiency: "非効率",
+  legal: "法律",
+  tos: "利用規約",
+  quality: "品質",
+  security: "セキュリティ",
 };
 
 // 監視官の節目レポート(運用第6章)。議題・未解決事項・決定事項・警告回数をまとめる。
