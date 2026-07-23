@@ -7,7 +7,7 @@ export function renderOsApp(token: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>AI意思決定OS</title>
+<title>意思決定OS</title>
 <link rel="manifest" href="/os/${token}/manifest.webmanifest">
 <link rel="icon" type="image/png" href="/os/icon-192.png">
 <link rel="apple-touch-icon" href="/os/icon-192.png">
@@ -160,6 +160,31 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .wmsg{border-top:1px solid var(--line-soft);padding:9px 0}
 .wmsg .wn{font-size:10px;color:var(--accent2);font-weight:700;margin-bottom:4px;letter-spacing:.12em;text-transform:uppercase}
 .wmsg .wc{white-space:pre-wrap;font-size:13px;line-height:1.7;color:#cabfa9}
+/* モーダル/トースト(ブラウザ標準ダイアログの代替) */
+.ovl{position:fixed;inset:0;background:rgba(10,9,5,.62);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:80;display:flex;align-items:center;justify-content:center;padding:22px;opacity:0;transition:opacity .18s}
+.ovl.show{opacity:1}
+.mdl{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-xl);box-shadow:var(--sh-lg);max-width:420px;width:100%;padding:20px;transform:translateY(8px) scale(.98);transition:transform .18s}
+.ovl.show .mdl{transform:none}
+.mdl h3{margin:0 0 8px;font-family:var(--serif);font-size:17px;font-weight:700}
+.mdl .mm{color:var(--muted);font-size:14px;line-height:1.75;white-space:pre-wrap}
+.mdl input{width:100%;margin-top:12px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
+.mdl input:focus{outline:none;border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+.mdl .mb{display:flex;gap:9px;margin-top:16px;justify-content:flex-end}
+.mdl .mb button{min-width:92px}
+#toasts{position:fixed;left:0;right:0;bottom:74px;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:90;pointer-events:none;padding:0 16px}
+.toast{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:11px;box-shadow:var(--sh);padding:11px 15px;font-size:13.5px;max-width:480px;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:none}
+.toast.err{border-left-color:var(--warn)}
+/* 初回オンボーディング */
+.onb-card{max-width:460px}
+.onb-mark{width:52px;height:52px;color:var(--accent);margin:2px auto 14px;display:block}
+.onb h2{font-family:var(--serif);font-size:20px;font-weight:700;margin:0 0 10px;text-align:center}
+.onb p{color:var(--muted);font-size:14px;line-height:1.85;margin:0 0 8px}
+.onb ol{margin:8px 0;padding-left:20px;color:var(--muted);font-size:13.5px;line-height:2}
+.onb .steps{display:flex;gap:6px;justify-content:center;margin:16px 0 4px}
+.onb .steps i{width:7px;height:7px;border-radius:99px;background:var(--line);display:block}
+.onb .steps i.on{background:var(--accent)}
+.onb .mb{justify-content:space-between}
 /* ナビゲーション(スマホ=下タブ / PC=左レール) */
 #osnav{position:fixed;z-index:40;display:flex;background:rgba(15,17,24,.9);backdrop-filter:saturate(1.3) blur(16px);-webkit-backdrop-filter:saturate(1.3) blur(16px);border-top:1px solid var(--line-soft)}
 #osnav button{flex:1;background:none;border:none;border-radius:12px;color:var(--faint);font-size:19px;padding:6px 0 4px;margin:6px 3px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:color var(--tap),background var(--tap)}
@@ -190,6 +215,7 @@ body{padding-bottom:60px}
  #osnav{left:0;top:0;bottom:0;right:auto;width:72px;height:auto;flex-direction:column;justify-content:flex-start;gap:2px;border-top:none;border-right:1px solid var(--line-soft);padding:max(12px,env(safe-area-inset-top)) 8px 8px}
  #osnav button{flex:0 0 auto;padding:9px 0;margin:0}
  .panel{bottom:0;left:72px}
+ #toasts{bottom:22px;left:72px}
 }
 </style>
 </head>
@@ -197,7 +223,7 @@ body{padding-bottom:60px}
 <header>
   <button class="icon menu" id="menuBtn" aria-label="メニュー"><i data-ic="menu"></i></button>
   <div style="flex:1">
-    <div class="title"><svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>AI意思決定OS</div>
+    <div class="title"><svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>意思決定OS</div>
     <div class="sub" id="subtitle">メンターと議論する</div>
   </div>
 
@@ -244,7 +270,10 @@ body{padding-bottom:60px}
 <div class="panel" id="setPanel">
   <div class="panel-h"><b><i data-ic="set"></i> 設定</b><button id="setClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="panel-body">
-    <button id="openRuns" style="width:100%;margin-bottom:14px"><i data-ic="runs"></i> AI会話ログ（閲覧専用）を開く</button>
+    <div style="display:flex;gap:9px;margin-bottom:14px">
+      <button id="openRuns" style="flex:1"><i data-ic="runs"></i> AI会話ログ</button>
+      <button id="openOnb" style="flex:1"><i data-ic="book"></i> はじめてガイド</button>
+    </div>
     <div class="keys" id="keyStatus"></div>
     <div id="roleList"></div>
     <div id="prefsCard"></div>
@@ -286,6 +315,7 @@ body{padding-bottom:60px}
     <div id="filesBody"></div>
   </div>
 </div>
+<div id="toasts"></div>
 <nav id="osnav">
   <button data-scr="home"><i data-ic="home"></i><span>ホーム</span></button>
   <button data-scr="chat"><i data-ic="chat"></i><span>チャット</span></button>
@@ -330,6 +360,49 @@ warn:'<path d="M12 3.5 21 19H3z"/><line x1="12" y1="10" x2="12" y2="14.4"/><line
 };
 function svg(name,cls){return '<svg class="ic'+(cls?' '+cls:'')+'" viewBox="0 0 24 24" aria-hidden="true">'+(ICONS[name]||'')+'</svg>';}
 function renderIcons(root){var ns=(root||document).querySelectorAll('i[data-ic]');Array.prototype.forEach.call(ns,function(n){if(n.getAttribute('data-done'))return;n.setAttribute('data-done','1');n.innerHTML=svg(n.getAttribute('data-ic'));});}
+// ── モーダル/トースト(ブラウザ標準のalert/confirm/promptは使わない) ──
+function toast(msg,isErr){
+  var box=el('toasts'); if(!box)return;
+  var t=document.createElement('div'); t.className='toast'+(isErr?' err':''); t.textContent=msg;
+  box.appendChild(t);
+  requestAnimationFrame(function(){t.classList.add('show')});
+  setTimeout(function(){t.classList.remove('show');setTimeout(function(){t.remove()},250)},2800);
+}
+// エラーを人間の言葉に(429/上限は次の一手つき)
+function friendly(e){
+  var m=(e&&e.message)?e.message:String(e);
+  if(/429|rate.?limit|上限|quota|RESOURCE_EXHAUSTED/i.test(m)) return 'AIの利用枠が一時的にいっぱいです。少し待つか、設定で別のプロバイダの無料キーを追加すると回避できます。';
+  return m;
+}
+function toastErr(e){toast(friendly(e),true);}
+// osModal({title,msg,input,def,placeholder,okLabel,cancelLabel,alertOnly}) → Promise
+// alertOnly: OKのみ / input: 文字列(キャンセルでnull) / それ以外: confirm(真偽)
+function osModal(o){
+  return new Promise(function(resolve){
+    var ovl=document.createElement('div'); ovl.className='ovl';
+    var m=document.createElement('div'); m.className='mdl';
+    var h=''; if(o.title)h+='<h3>'+esc(o.title)+'</h3>';
+    h+='<div class="mm">'+esc(o.msg||'')+'</div>';
+    if(o.input)h+='<input id="mdlInput" type="text" value="'+esc(o.def||'')+'" placeholder="'+esc(o.placeholder||'')+'">';
+    h+='<div class="mb">'+(o.alertOnly?'':'<button id="mdlNo">'+esc(o.cancelLabel||'キャンセル')+'</button>')+
+       '<button class="primary" id="mdlOk">'+esc(o.okLabel||'OK')+'</button></div>';
+    m.innerHTML=h; ovl.appendChild(m); document.body.appendChild(ovl);
+    requestAnimationFrame(function(){ovl.classList.add('show')});
+    var inp=m.querySelector('#mdlInput');
+    function close(val){ovl.classList.remove('show');setTimeout(function(){ovl.remove()},180);resolve(val);}
+    m.querySelector('#mdlOk').onclick=function(){close(o.input?(inp?inp.value:''):true)};
+    var no=m.querySelector('#mdlNo'); if(no)no.onclick=function(){close(o.input?null:false)};
+    ovl.onclick=function(ev){if(ev.target===ovl&&!o.alertOnly)close(o.input?null:false)};
+    document.addEventListener('keydown',function onk(ev){
+      if(!document.body.contains(ovl)){document.removeEventListener('keydown',onk);return;}
+      if(ev.key==='Escape'&&!o.alertOnly){close(o.input?null:false);document.removeEventListener('keydown',onk);}
+      if(ev.key==='Enter'&&o.input){close(inp?inp.value:'');document.removeEventListener('keydown',onk);}
+    });
+    if(inp)setTimeout(function(){inp.focus()},60);
+  });
+}
+function osConfirm(msg,title,okLabel){return osModal({msg:msg,title:title,okLabel:okLabel||'実行する'});}
+function osPrompt(msg,def,title,placeholder){return osModal({msg:msg,input:true,def:def,title:title,placeholder:placeholder});}
 function api(path, opts){
   return fetch(API + path, Object.assign({headers:{'content-type':'application/json'}}, opts||{}))
     .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})});
@@ -341,7 +414,9 @@ el('scrim').onclick=function(){openDrawer(false)};
 function updateBanner(stub){
   if(stub){
     el('banner').style.display='block';
-    el('banner').textContent='LLM未接続: 今はスタブ応答です。GEMINI_API_KEY / ANTHROPIC_API_KEY などを設定すると実際に思考します。';
+    el('banner').innerHTML='体験モードで動いています(応答はサンプル)。<u style="cursor:pointer">設定から無料のAPIキーを登録</u>すると本物のAIになります。';
+    el('banner').style.cursor='pointer';
+    el('banner').onclick=function(){showScreen('set')};
   } else {
     el('banner').style.display='none';
   }
@@ -360,9 +435,9 @@ function loadChats(){
       var proj = c.project ? esc(c.project) : '未分類';
       div.innerHTML='<div class="t">'+esc(c.title)+'<div class="cnt">'+(c.message_count||0)+' メッセージ · '+proj+'</div></div>';
       var pj=document.createElement('button'); pj.className='del'; pj.innerHTML=svg('saved'); pj.title='プロジェクトに割り当て';
-      pj.onclick=function(e){e.stopPropagation();var name=prompt('プロジェクト名(空欄で未分類に戻す)',c.project||'');if(name===null)return;api('/chats/'+c.id,{method:'PATCH',body:JSON.stringify({project:name})}).then(function(){loadChats()}).catch(function(err){alert(err.message)})};
+      pj.onclick=function(e){e.stopPropagation();osPrompt('プロジェクト名(空欄で未分類に戻す)',c.project||'','プロジェクトに割り当て').then(function(name){if(name===null)return;api('/chats/'+c.id,{method:'PATCH',body:JSON.stringify({project:name})}).then(function(){loadChats()}).catch(toastErr)})};
       var del=document.createElement('button'); del.className='del'; del.innerHTML='<svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'; del.title='削除';
-      del.onclick=function(e){e.stopPropagation();if(confirm('この会話を削除しますか？'))api('/chats/'+c.id,{method:'DELETE'}).then(function(){if(current===c.id){current=null;renderMessages([]);el('subtitle').textContent='メンターと議論する';el('fileStrip').style.display='none';el('fileStrip').innerHTML=''}loadChats()})};
+      del.onclick=function(e){e.stopPropagation();osConfirm('この会話を削除しますか？','会話の削除','削除する').then(function(ok){if(!ok)return;api('/chats/'+c.id,{method:'DELETE'}).then(function(){if(current===c.id){current=null;renderMessages([]);el('subtitle').textContent='メンターと議論する';el('fileStrip').style.display='none';el('fileStrip').innerHTML=''}loadChats()}).catch(toastErr)})};
       div.querySelector('.t').onclick=function(){openChat(c.id,c.title)};
       div.appendChild(pj); div.appendChild(del);
       list.appendChild(div);
@@ -422,11 +497,11 @@ function startEditMsg(container, m){
   bubble.appendChild(ta); bubble.appendChild(row); ta.focus();
   cancel.onclick=function(){ bubble.textContent=orig; };
   save.onclick=function(){
-    var v=ta.value.trim(); if(!v){alert('空にはできません');return;}
+    var v=ta.value.trim(); if(!v){toast('空にはできません',true);return;}
     save.disabled=true;
     api('/messages/'+m.id,{method:'PATCH',body:JSON.stringify({content:v})}).then(function(){
       m.content=v; bubble.textContent=v;
-    }).catch(function(e){ alert(e.message); save.disabled=false; });
+    }).catch(function(e){ toastErr(e); save.disabled=false; });
   };
 }
 function renderMessages(msgs){
@@ -464,7 +539,7 @@ function appendTyping(){
 function removeTyping(){var t=el('typing');if(t)t.remove()}
 
 function doSend(text){
-  sending=true; el('sendBtn').disabled=true;
+  sending=true; el('sendBtn').disabled=true; el('sendBtn').textContent='送信中';
   var box=el('msgs');
   var emp=box.querySelector('.empty'); if(emp)box.innerHTML='';
   var row=document.createElement('div'); row.className='row user';
@@ -480,8 +555,8 @@ function doSend(text){
     box.scrollTop=box.scrollHeight;
     updateBanner(d.stub);
     loadChats();
-  }).catch(function(e){removeTyping();var er=document.createElement('div');er.className='typing';er.textContent='エラー: '+e.message;box.appendChild(er)})
-    .then(function(){sending=false;el('sendBtn').disabled=false});
+  }).catch(function(e){removeTyping();var er=document.createElement('div');er.className='typing';er.textContent='エラー: '+friendly(e);box.appendChild(er)})
+    .then(function(){sending=false;el('sendBtn').disabled=false;el('sendBtn').textContent='送信'});
 }
 function send(){
   if(sending)return;
@@ -494,7 +569,7 @@ function send(){
       current=d.chat.id; el('subtitle').textContent=d.chat.title; el('msgs').innerHTML='';
       el('fileStrip').style.display='none'; el('fileStrip').innerHTML='';
       doSend(text);
-    }).catch(function(e){alert(e.message)});
+    }).catch(toastErr);
   } else {
     doSend(text);
   }
@@ -525,8 +600,15 @@ function renderCandidate(c){
   wireCard(card,c); box.appendChild(card); box.scrollTop=box.scrollHeight;
 }
 function decide(card,cid,act){
-  var reason='';
-  if(act==='reject'){ reason=prompt('却下する理由(任意・記録に残して同じ案の再提案を防ぎます)',''); if(reason===null)return; }
+  if(act==='reject'){
+    osPrompt('却下する理由(任意・記録に残して同じ案の再提案を防ぎます)','','候補を却下').then(function(reason){
+      if(reason===null)return; decideRun(card,cid,act,reason);
+    });
+    return;
+  }
+  decideRun(card,cid,act,'');
+}
+function decideRun(card,cid,act,reason){
   var btns=card.querySelectorAll('button'); Array.prototype.forEach.call(btns,function(b){b.disabled=true});
   api('/candidates/'+cid+'/'+act,{method:'POST',body:JSON.stringify({reason:reason})}).then(function(r){
     card.classList.add('done');
@@ -539,14 +621,14 @@ function decide(card,cid,act){
         tb.disabled=true; tb.textContent='作成中…';
         api('/decisions/'+r.memory.id+'/task',{method:'POST'}).then(function(tr){
           tb.textContent='タスク作成: '+tr.task.title;
-        }).catch(function(e){alert(e.message);tb.disabled=false;tb.textContent='▶ 実行タスクにする'});
+        }).catch(function(e){toastErr(e);tb.disabled=false;tb.textContent='▶ 実行タスクにする'});
       };
       card.appendChild(tb);
     }
-  }).catch(function(e){alert(e.message);Array.prototype.forEach.call(btns,function(b){b.disabled=false})});
+  }).catch(function(e){toastErr(e);Array.prototype.forEach.call(btns,function(b){b.disabled=false})});
 }
 function propose(){
-  if(current==null){alert('先に会話を始めてください');return;}
+  if(current==null){toast('先に会話を始めてください',true);return;}
   var pb=el('proposeBtn'); pb.disabled=true;
   var box=el('msgs'); if(box.querySelector('.empty'))box.innerHTML='';
   var note=document.createElement('div'); note.className='typing'; note.textContent='記録官が保存候補を検討中…';
@@ -555,7 +637,7 @@ function propose(){
     note.remove();
     if(!r.save||!r.candidate){var n=document.createElement('div');n.className='typing';n.textContent='保存に値する確定した結論は見つかりませんでした。';box.appendChild(n);box.scrollTop=box.scrollHeight;return;}
     renderCandidate(r.candidate);
-  }).catch(function(e){note.remove();alert(e.message)}).then(function(){pb.disabled=false});
+  }).catch(function(e){note.remove();toastErr(e)}).then(function(){pb.disabled=false});
 }
 el('proposeBtn').onclick=propose;
 
@@ -672,7 +754,7 @@ function loadDecisionDetail(id){
       api('/decisions/'+id+'/task',{method:'POST'}).then(function(r){
         tbtn.textContent='タスクを作成しました('+esc(r.task.title)+')';
         loadDecisionDetail(id);
-      }).catch(function(e){alert(e.message);tbtn.disabled=false;tbtn.textContent='▶ この決定をタスクにする'});
+      }).catch(function(e){toastErr(e);tbtn.disabled=false;tbtn.textContent='▶ この決定をタスクにする'});
     };
     sec4.appendChild(tbtn);
     var note=document.createElement('div'); note.className='dm'; note.style.marginTop='6px';
@@ -735,10 +817,10 @@ function workLogNode(log){
 }
 function delegate(){
   if(sending)return;
-  if(current==null){alert('先に会話を始めてください');return;}
+  if(current==null){toast('先に会話を始めてください',true);return;}
   var text=el('input').value.trim();
-  if(!text){alert('作業AIに振るタスクを入力してください');return;}
-  sending=true; el('sendBtn').disabled=true; el('delegateBtn').disabled=true;
+  if(!text){toast('作業AIに振るタスクを入力してください',true);return;}
+  sending=true; el('sendBtn').disabled=true; el('sendBtn').textContent='実行中'; el('delegateBtn').disabled=true;
   el('input').value=''; el('input').style.height='auto';
   var box=el('msgs'); if(box.querySelector('.empty'))box.innerHTML='';
   var row=document.createElement('div'); row.className='row user';
@@ -752,13 +834,13 @@ function delegate(){
     if(d.mentor) box.appendChild(msgNode(d.mentor));
     box.scrollTop=box.scrollHeight; updateBanner(d.stub); loadChats();
   }).catch(function(e){var t=el('wtyping');if(t)t.remove();var er=document.createElement('div');er.className='typing';er.textContent='エラー: '+e.message;box.appendChild(er)})
-    .then(function(){sending=false;el('sendBtn').disabled=false;el('delegateBtn').disabled=false});
+    .then(function(){sending=false;el('sendBtn').disabled=false;el('sendBtn').textContent='送信';el('delegateBtn').disabled=false});
 }
 el('delegateBtn').onclick=delegate;
 
 // 📋 監視官の節目レポート
 function makeReport(){
-  if(current==null){alert('先に会話を始めてください');return;}
+  if(current==null){toast('先に会話を始めてください',true);return;}
   var rb=el('reportBtn'); rb.disabled=true;
   var box=el('msgs'); if(box.querySelector('.empty'))box.innerHTML='';
   var note=document.createElement('div'); note.className='typing'; note.id='rtyping'; note.textContent='監視官がレポートを作成中…';
@@ -768,7 +850,7 @@ function makeReport(){
     var mon=document.createElement('div'); mon.className='mon';
     mon.innerHTML='<span class="ml">'+svg('report')+' 特命監視官レポート</span>'+esc(r.report.content);
     box.appendChild(mon); box.scrollTop=box.scrollHeight;
-  }).catch(function(e){var t=el('rtyping');if(t)t.remove();alert(e.message)}).then(function(){rb.disabled=false});
+  }).catch(function(e){var t=el('rtyping');if(t)t.remove();toastErr(e)}).then(function(){rb.disabled=false});
 }
 el('reportBtn').onclick=makeReport;
 
@@ -801,6 +883,7 @@ var ROLE_JA={mentor:'メンター兼司令塔',monitor:'特命監視官',recorde
 var DEFAULT_MODELS={anthropic:'claude-sonnet-4-20250514',openai:'gpt-4o',gemini:'gemini-2.5-flash',groq:'llama-3.3-70b-versatile',cerebras:'llama-3.3-70b'};
 el('setClose').onclick=function(){showScreen('chat')};
 el('openRuns').onclick=function(){showScreen('runs')};
+el('openOnb').onclick=function(){showOnboarding()};
 var PROV_JA={anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',gemini:'Google (Gemini)',groq:'Groq (Llama等・爆速)',cerebras:'Cerebras (Llama等・大容量)'};
 function keyRow(p, info){
   var box=document.createElement('div'); box.className='role';
@@ -815,17 +898,19 @@ function keyRow(p, info){
   var inp=box.querySelector('input'), sv=box.querySelector('.saved');
   box.querySelector('.save').onclick=function(){
     var v=inp.value.trim();
-    if(!v){alert('APIキーを貼り付けてください');return;}
+    if(!v){toast('APIキーを貼り付けてください',true);return;}
     api('/keys',{method:'PUT',body:JSON.stringify({provider:p,key:v})}).then(function(){
       inp.value=''; sv.style.display='inline';
       setTimeout(function(){sv.style.display='none'},1500);
       loadRoles(); loadStatus();
-    }).catch(function(e){alert(e.message)});
+    }).catch(toastErr);
   };
   var del=box.querySelector('.del');
   if(del)del.onclick=function(){
-    if(!confirm('このキーを削除しますか？'))return;
-    api('/keys',{method:'DELETE',body:JSON.stringify({provider:p})}).then(function(){loadRoles();loadStatus()}).catch(function(e){alert(e.message)});
+    osConfirm('このキーを削除しますか？','APIキーの削除','削除する').then(function(ok){
+      if(!ok)return;
+      api('/keys',{method:'DELETE',body:JSON.stringify({provider:p})}).then(function(){loadRoles();loadStatus()}).catch(toastErr);
+    });
   };
   return box;
 }
@@ -864,9 +949,9 @@ function loadBackup(){
     el('backupNow').onclick=function(){
       el('backupNow').disabled=true; el('backupNow').textContent='実行中…';
       api('/backup',{method:'POST'}).then(function(r){
-        alert(r.status.ok ? 'バックアップ完了: '+r.status.location : '実行結果: '+(r.status.error||'失敗'));
+        toast(r.status.ok ? 'バックアップ完了: '+r.status.location : '実行結果: '+(r.status.error||'失敗'), !r.status.ok);
         loadBackup();
-      }).catch(function(e){alert(e.message);loadBackup()});
+      }).catch(function(e){toastErr(e);loadBackup()});
     };
     el('restoreFile').onchange=function(){
       var f=el('restoreFile').files[0]; if(!f)return;
@@ -876,12 +961,14 @@ function loadBackup(){
         api('/restore',{method:'POST',body:JSON.stringify({backup:backup})}).then(function(r){
           var p=r.preview;
           if(!p.found){msg.textContent='このバックアップにあなたのデータが見つかりませんでした';return;}
-          if(!confirm('復元プレビュー: チャット'+p.chats+'件 / メッセージ'+p.messages+'件を追記します。よろしいですか？')){msg.textContent='キャンセルしました';return;}
+          osConfirm('チャット'+p.chats+'件 / メッセージ'+p.messages+'件を追記します。よろしいですか？','復元プレビュー','復元する').then(function(ok){
+          if(!ok){msg.textContent='キャンセルしました';return;}
           msg.textContent='復元中…';
           api('/restore',{method:'POST',body:JSON.stringify({backup:backup,confirm:true})}).then(function(rr){
             msg.textContent='復元しました: チャット'+rr.restored.chats+'件 / メッセージ'+rr.restored.messages+'件';
             loadChats();
-          }).catch(function(e){msg.textContent='エラー: '+e.message});
+          }).catch(function(e){msg.textContent='エラー: '+friendly(e)});
+          });
         }).catch(function(e){msg.textContent='エラー: '+e.message});
       });
     };
@@ -911,7 +998,7 @@ function loadPrefs(){
       b.onclick=function(){
         b.disabled=true;
         api('/prefs',{method:'PUT',body:JSON.stringify({key:b.getAttribute('data-pref'),value:b.getAttribute('data-next')})})
-          .then(function(){loadPrefs()}).catch(function(e){alert(e.message);loadPrefs()});
+          .then(function(){loadPrefs()}).catch(function(e){toastErr(e);loadPrefs()});
       };
     });
   }).catch(function(){card.innerHTML=''});
@@ -947,19 +1034,21 @@ function loadRoles(){
         api('/roles',{method:'PUT',body:JSON.stringify({role:r.role,provider:sel.value,model:inp.value})}).then(function(){
           sv.style.display='inline'; setTimeout(function(){sv.style.display='none'},1500);
           if(opt.slot)loadRoles(); // 作業AIスロットは「既定に従う」表示を更新するため再描画
-        }).catch(function(e){alert(e.message)});
+        }).catch(toastErr);
       };
       var kinp=box.querySelector('.kinp'), svk=box.querySelector('.savedk');
       box.querySelector('.savek').onclick=function(){
-        var v=kinp.value.trim(); if(!v){alert('専用キーを貼り付けてください(不要なら空のままでOK)');return;}
+        var v=kinp.value.trim(); if(!v){toast('専用キーを貼り付けてください(不要なら空のままでOK)',true);return;}
         api('/rolekeys',{method:'PUT',body:JSON.stringify({role:r.role,key:v})}).then(function(){
           kinp.value=''; svk.style.display='inline'; setTimeout(function(){svk.style.display='none'},1200); loadRoles();
-        }).catch(function(e){alert(e.message)});
+        }).catch(toastErr);
       };
       var delk=box.querySelector('.delk');
       if(delk)delk.onclick=function(){
-        if(!confirm('この役割の専用キーをクリアしますか？(共有キーに戻ります)'))return;
-        api('/rolekeys',{method:'DELETE',body:JSON.stringify({role:r.role})}).then(function(){loadRoles()}).catch(function(e){alert(e.message)});
+        osConfirm('この役割の専用キーをクリアしますか？(共有キーに戻ります)','専用キーのクリア','クリアする').then(function(ok){
+          if(!ok)return;
+          api('/rolekeys',{method:'DELETE',body:JSON.stringify({role:r.role})}).then(function(){loadRoles()}).catch(toastErr);
+        });
       };
       list.appendChild(box);
     }
@@ -1022,9 +1111,9 @@ function fileToPayload(file){
 function uploadFile(file){
   if(!file)return;
   fileToPayload(file).then(function(p){
-    if(p.data.length>900000){alert('ファイルが大きすぎます(約500KBまで)。写真は自動縮小しても大きい場合や、大きな書類・動画は入れられません。');return null;}
+    if(p.data.length>900000){toast('ファイルが大きすぎます(約500KBまで)。大きな書類・動画は入れられません。',true);return null;}
     return api('/files',{method:'POST',body:JSON.stringify({name:p.name,mime:p.mime,data:p.data,chat_id:current})});
-  }).then(function(r){ if(r&&r.file){ if(current)loadFileStrip(current); if(el('filesPanel').classList.contains('open'))loadFiles(); } }).catch(function(e){alert(e.message);});
+  }).then(function(r){ if(r&&r.file){ toast('ファイルを追加しました'); if(current)loadFileStrip(current); if(el('filesPanel').classList.contains('open'))loadFiles(); } }).catch(toastErr);
 }
 function fileHref(f){return API+'/files/'+f.id;}
 function fileChip(f){
@@ -1049,18 +1138,20 @@ function loadFiles(){
     d.files.forEach(function(f){
       var href=fileHref(f), isImg=f.mime.indexOf('image/')===0;
       var card=document.createElement('div'); card.className='frow';
-      card.innerHTML=(isImg?'<a href="'+href+'" target="_blank" rel="noopener"><img class="fthumb" src="'+href+'"></a>':'<a class="fthumb" href="'+href+'" target="_blank" rel="noopener">📄</a>')+
+      card.innerHTML=(isImg?'<a href="'+href+'" target="_blank" rel="noopener"><img class="fthumb" src="'+href+'"></a>':'<a class="fthumb" href="'+href+'" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><path d="M13 3v6h6"/></svg></a>')+
         '<div class="fmeta"><a href="'+href+'" target="_blank" rel="noopener">'+esc(f.name)+'</a><div class="dm">'+Math.round(f.size/1024)+'KB · '+esc(f.created_at||'')+'</div></div>'+
         '<button class="fdel">削除</button>';
       card.querySelector('.fdel').onclick=function(){
-        if(!confirm('このファイルを削除しますか？'))return;
-        api('/files/'+f.id,{method:'DELETE'}).then(function(){loadFiles(); if(current)loadFileStrip(current);}).catch(function(e){alert(e.message);});
+        osConfirm('このファイルを削除しますか？','ファイルの削除','削除する').then(function(ok){
+          if(!ok)return;
+          api('/files/'+f.id,{method:'DELETE'}).then(function(){loadFiles(); if(current)loadFileStrip(current);}).catch(toastErr);
+        });
       };
       body.appendChild(card);
     });
   }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>';});
 }
-el('attachBtn').onclick=function(){ if(!current){alert('先にチャットを開いてください');return;} el('fileInput').click(); };
+el('attachBtn').onclick=function(){ if(!current){toast('先にチャットを開いてください',true);return;} el('fileInput').click(); };
 el('fileInput').onchange=function(){ var f=el('fileInput').files[0]; el('fileInput').value=''; uploadFile(f); };
 el('filesAdd').onclick=function(){ el('fileInput').click(); };
 function renderMemCard(m, box){
@@ -1112,8 +1203,8 @@ function openProject(name){
     }
     // 完了 / 再開ボタン(運用第9章)
     var pbtn=document.createElement('button'); pbtn.style.width='100%'; pbtn.style.marginBottom='12px';
-    if(st.status==='archived'){ pbtn.textContent='このプロジェクトを再開'; pbtn.onclick=function(){api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'reopen'})}).then(function(){openProject(name)}).catch(function(e){alert(e.message)})}; }
-    else { pbtn.className='primary'; pbtn.textContent='プロジェクトを完了(最終報告を作成)'; pbtn.onclick=function(){if(!confirm('このプロジェクトを完了しますか？現行の決定から最終報告を作成します。'))return;pbtn.disabled=true;pbtn.textContent='最終報告を作成中…';api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'complete'})}).then(function(){openProject(name)}).catch(function(e){alert(e.message);pbtn.disabled=false})}; }
+    if(st.status==='archived'){ pbtn.textContent='このプロジェクトを再開'; pbtn.onclick=function(){api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'reopen'})}).then(function(){openProject(name)}).catch(toastErr)}; }
+    else { pbtn.className='primary'; pbtn.textContent='プロジェクトを完了(最終報告を作成)'; pbtn.onclick=function(){osConfirm('このプロジェクトを完了しますか？現行の決定から最終報告を作成します。','プロジェクトの完了','完了する').then(function(ok){if(!ok)return;pbtn.disabled=true;pbtn.textContent='最終報告を作成中…';api('/projects',{method:'POST',body:JSON.stringify({project:name,action:'complete'})}).then(function(){openProject(name)}).catch(function(e){toastErr(e);pbtn.disabled=false})})}; }
     body.appendChild(pbtn);
     var s1=document.createElement('div'); s1.className='home-sec'; s1.innerHTML='<h3>チャット</h3>';
     if(!chats.length){s1.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">このプロジェクトのチャットはありません</div>';}
@@ -1144,7 +1235,7 @@ function loadHome(){
       var live=roles.keys[r.provider];
       var row=document.createElement('div'); row.className='stat';
       row.innerHTML='<span>'+esc(ROLE_JA[r.role]||r.role)+'</span><span class="sm">'+esc(r.provider+' / '+r.model)+'</span>'+
-        '<span class="badge '+(live?'run':'stub')+'">'+(live?'稼働中':'スタブ')+'</span>';
+        '<span class="badge '+(live?'run':'stub')+'">'+(live?'稼働中':'体験')+'</span>';
       card.appendChild(row);
     });
     sec1.appendChild(card); body.appendChild(sec1);
@@ -1213,7 +1304,59 @@ el('installBtn').onclick=function(){
 };
 window.addEventListener('appinstalled',function(){el('installBtn').style.display='none'});
 
+// ── 初回オンボーディング(3ステップ)。localStorage で1回きり。設定から再表示可 ──
+function showOnboarding(){
+  var step=0;
+  var ovl=document.createElement('div'); ovl.className='ovl';
+  var m=document.createElement('div'); m.className='mdl onb-card onb';
+  ovl.appendChild(m); document.body.appendChild(ovl);
+  requestAnimationFrame(function(){ovl.classList.add('show')});
+  var MARK='<svg class="onb-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>';
+  function dots(){var h='<div class="steps">';for(var i=0;i<3;i++)h+='<i class="'+(i===step?'on':'')+'"></i>';return h+'</div>';}
+  function done(next){
+    localStorage.setItem('os_onb_v1','1');
+    ovl.classList.remove('show'); setTimeout(function(){ovl.remove()},180);
+    if(next==='set')showScreen('set');
+    if(next==='chat'){showScreen('chat');el('newChatBtn').click();}
+  }
+  function render(){
+    var h='';
+    if(step===0){
+      h=MARK+'<h2>意思決定OSへようこそ</h2>'+
+        '<p>ここは、あなたに賛成するためのAIではありません。<b>対等な相棒として率直に議論し</b>、出た結論だけを「決定」としてあなたの承認つきで記録します。</p>'+
+        '<p>決定は消えません。あとから変わったときは「なぜ変えたか」ごと履歴に残ります。</p>'+
+        dots()+'<div class="mb"><button data-a="skip">スキップ</button><button class="primary" data-a="next">次へ</button></div>';
+    }else if(step===1){
+      h=MARK+'<h2>本物のAIにする(無料でOK)</h2>'+
+        '<p>APIキーを1つ登録すると、本物のAIが応答します。無料で取れます:</p>'+
+        '<ol><li><b>Gemini</b> — aistudio.google.com →「Get API key」</li>'+
+        '<li><b>Groq</b> — console.groq.com(高速)</li>'+
+        '<li><b>Cerebras</b> — cloud.cerebras.ai(大容量)</li></ol>'+
+        '<p>あとで登録する場合は、まず<b>体験モード</b>(サンプル応答)で操作感を試せます。</p>'+
+        dots()+'<div class="mb"><button data-a="next">あとで(体験モードで試す)</button><button class="primary" data-a="set">設定でキーを登録</button></div>';
+    }else{
+      h=MARK+'<h2>使い方は3つだけ</h2>'+
+        '<ol><li><b>相談する</b> — チャットで論点を投げる。相棒が率直に返します</li>'+
+        '<li><b>記録する</b> — 結論が出たら記録ボタン。候補を確認して[承認]で決定に</li>'+
+        '<li><b>振り返る</b> — 「記録」タブに決定・メモ・ファイルが全部残ります</li></ol>'+
+        '<p>監視官は普段は黙っています。脱線や過去の決定との矛盾のときだけ、横から一言入ります。</p>'+
+        dots()+'<div class="mb"><button data-a="skip">閉じる</button><button class="primary" data-a="chat">最初の相談を始める</button></div>';
+    }
+    m.innerHTML=h;
+    Array.prototype.forEach.call(m.querySelectorAll('button[data-a]'),function(b){
+      b.onclick=function(){
+        var a=b.getAttribute('data-a');
+        if(a==='next'){step++;render();}
+        else if(a==='set')done('set');
+        else if(a==='chat')done('chat');
+        else done();
+      };
+    });
+  }
+  render();
+}
 renderIcons(); renderMessages([]); loadStatus(); loadChats(); showScreen('home');
+if(!localStorage.getItem('os_onb_v1'))showOnboarding();
 </script>
 </body>
 </html>`;

@@ -124,7 +124,7 @@ export async function runCandidateReview(
     { role: "user", content: `保存候補:\nタイトル: ${candidate.title}\n内容: ${candidate.content}\n\nこの候補を整合性チェックしてください。` },
   ];
   const res = await callLLM(system, input, rm, secrets);
-  if (res.stub) return { text: "(メンター確認スタブ) 既存の決定との明らかな矛盾は検出されませんでした。", stub: true };
+  if (res.stub) return { text: "(体験モード) 既存の決定との明らかな矛盾は検出されませんでした。", stub: true };
   return res;
 }
 
@@ -171,7 +171,7 @@ function stubCandidate(msgs: StoredMsg[]): Candidate | null {
   if (!lastUser) return null;
   const t = lastUser.content.replace(/\s+/g, " ").trim();
   if (!t) return null;
-  return { kind: "decision", title: t.slice(0, 40), content: t.slice(0, 2000), tags: "", summary: "(スタブ生成) " + t.slice(0, 60), supersedes_id: null };
+  return { kind: "decision", title: t.slice(0, 40), content: t.slice(0, 2000), tags: "", summary: "(体験モード) " + t.slice(0, 60), supersedes_id: null };
 }
 
 // 会話から保存候補を1件生成する(記録官)。保存はまだしない — 承認待ちの候補を返すだけ。
@@ -341,7 +341,7 @@ export async function runMonitorReport(
     const lastUser = [...msgs].reverse().find((m) => m.role === "user");
     const text =
       `【現在の議題】${lastUser ? lastUser.content.slice(0, 40) : "特になし"}\n` +
-      `【未解決の論点】(スタブ) LLM接続後に自動要約されます\n` +
+      `【未解決の論点】(体験モード) APIキー登録後に自動要約されます\n` +
       `【確定した決定事項】${active.length ? active.map((d) => d.title).slice(0, 3).join(" / ") : "特になし"}\n` +
       `【逸脱・ループの傾向】話題逸脱 ${counts.deviation}回 / ループ ${counts.loop}回`;
     return { text, stub: true };
