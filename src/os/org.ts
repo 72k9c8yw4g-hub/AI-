@@ -124,7 +124,7 @@ export async function runCandidateReview(
     { role: "user", content: `保存候補:\nタイトル: ${candidate.title}\n内容: ${candidate.content}\n\nこの候補を整合性チェックしてください。` },
   ];
   const res = await callLLM(system, input, rm, secrets);
-  if (res.stub) return { text: "✅ (メンター確認スタブ) 既存の決定との明らかな矛盾は検出されませんでした。", stub: true };
+  if (res.stub) return { text: "(メンター確認スタブ) 既存の決定との明らかな矛盾は検出されませんでした。", stub: true };
   return res;
 }
 
@@ -201,7 +201,6 @@ export type WarningType =
   | "deviation"
   | "loop"
   | "contradiction"
-  | "drift"
   | "inefficiency"
   | "legal"
   | "tos"
@@ -220,7 +219,6 @@ export const MONITOR_SYSTEM = `あなたは「AI意思決定OS」の特命監視
 - deviation: 今の議題から明らかに逸脱している
 - loop: 結論の出ない同じ議論を明確に繰り返している
 - contradiction: 今の発言が、現行の決定と【完全に同じ対象】について正反対。対象・テーマが一致しない決定を引き合いに出さない(例:「収益化」の決定に「趣味AIを作る」は対象違い→矛盾にしない)
-- drift: 当初のプロジェクト目的から徐々に離れている
 - inefficiency: 明らかに非効率(堂々巡り・過剰調査・実行の先送り)
 - legal: 法的リスクがありそう(著作権・契約・法令違反の可能性)
 - tos: 使おうとしているサービスの利用規約に反しそう
@@ -239,7 +237,7 @@ function parseWarnings(text: string): Warning[] {
     if (!m) return [];
     const arr = JSON.parse(m[0]) as unknown;
     if (!Array.isArray(arr)) return [];
-    const valid: WarningType[] = ["deviation", "loop", "contradiction", "drift", "inefficiency", "legal", "tos", "quality", "security"];
+    const valid: WarningType[] = ["deviation", "loop", "contradiction", "inefficiency", "legal", "tos", "quality", "security"];
     return arr
       .map((o) => {
         const type = (o as { type?: unknown }).type;
@@ -308,7 +306,6 @@ export const WARNING_LABEL: Record<WarningType, string> = {
   deviation: "話題逸脱",
   loop: "ループ",
   contradiction: "矛盾",
-  drift: "目的離脱",
   inefficiency: "非効率",
   legal: "法律",
   tos: "利用規約",

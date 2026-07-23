@@ -221,7 +221,11 @@ export async function handleOsApi(
       const monRm = await getRoleModel(db, userId, "monitor");
       const mon = await resolveRoleCall(db, userId, "monitor", monRm, secrets);
       const withMentor = (await listMessages(db, userId, id)).slice(-30);
-      const warnings = await runMonitorTurn(withMentor, active, mon.rm, mon.secrets);
+      let warnings = await runMonitorTurn(withMentor, active, mon.rm, mon.secrets);
+      // 監査カテゴリのオフ設定(設計v2 P3)。コア3種(deviation/loop/contradiction)は常時、
+      // 拡張種(legal/tos/quality/security/inefficiency)は ⚙️ で mon_<type>='off' にすると破棄。
+      const prefsAll = await listPrefs(db, userId);
+      warnings = warnings.filter((w) => prefsAll[`mon_${w.type}`] !== "off");
       if (warnings.length) {
         const text = warnings.map((w) => `[${w.type}] ${w.message}`).join("\n");
         monitorMsg = await addMessage(db, userId, id, "monitor", text);
@@ -310,9 +314,10 @@ export async function handleOsApi(
       if (!chat) return notFound();
       const msgs = (await listMessages(db, userId, id)).slice(-30);
       if (!msgs.length) return json({ save: false, reason: "まだ会話がありません" });
-      // 記録官(候補生成) + メンター確認 の2回ぶんを先に消費(運用第8章のフロー)
+      // メンター所見はオプトイン(設計v2 P4)。既定OFF=記録官のみ(1回)。ONなら+1回。
+      const withReview = (await getPref(db, userId, "mentor_note")) === "on";
       try {
-        await consumeLlmBudget(db, userId, 2);
+        await consumeLlmBudget(db, userId, withReview ? 2 : 1);
       } catch (e) {
         return json({ error: e instanceof Error ? e.message : String(e) }, 429);
       }
@@ -323,13 +328,17 @@ export async function handleOsApi(
       if (!r.save || !r.candidate) return json({ save: false, stub: r.stub });
       // 候補は元チャットのプロジェクトを引き継ぐ(承認後の決定がそのPJに属するように)
       const candidate = await createCandidate(db, userId, id, { ...r.candidate, project: chat.project ?? "" });
-      // メンター確認(運用第8章: 記録官→メンター確認→ユーザー承認)。整合性の所見を候補に付ける
-      const revRm = await getRoleModel(db, userId, "mentor");
-      const rev = await resolveRoleCall(db, userId, "mentor", revRm, secrets);
-      const review = await runCandidateReview({ title: candidate.title, content: candidate.content }, active, rev.rm, rev.secrets);
-      await setCandidateMentorNote(db, userId, candidate.id, review.text);
-      candidate.mentor_note = review.text;
-      return json({ save: true, candidate, stub: r.stub || review.stub });
+      // メンター確認(運用第8章: 記録官→メンター確認→ユーザー承認)。ON のときだけ所見を付ける
+      let reviewStub = false;
+      if (withReview) {
+        const revRm = await getRoleModel(db, userId, "mentor");
+        const rev = await resolveRoleCall(db, userId, "mentor", revRm, secrets);
+        const review = await runCandidateReview({ title: candidate.title, content: candidate.content }, active, rev.rm, rev.secrets);
+        await setCandidateMentorNote(db, userId, candidate.id, review.text);
+        candidate.mentor_note = review.text;
+        reviewStub = review.stub;
+      }
+      return json({ save: true, candidate, stub: r.stub || reviewStub });
     }
 
     if (!action) {
@@ -565,9 +574,10 @@ export async function handleOsApi(
     return notFound();
   }
 
-  // /os/prefs … ユーザー設定フラグ(既知キーのみ)。例: auto_report(決定承認で節目レポート自動生成)
+  // /os/prefs … ユーザー設定フラグ(既知キーのみ)。auto_report / mentor_note(📝の所見・既定OFF) /
+  // mon_*(監査カテゴリのオフ設定・既定ON。コア3種 deviation/loop/contradiction は対象外)
   if (head === "prefs") {
-    const ALLOWED = new Set(["auto_report"]);
+    const ALLOWED = new Set(["auto_report", "mentor_note", "mon_legal", "mon_tos", "mon_quality", "mon_security", "mon_inefficiency"]);
     if (method === "GET") return json({ prefs: await listPrefs(db, userId) });
     if (method === "PUT") {
       const b = (await req.json().catch(() => ({}))) as { key?: unknown; value?: unknown };

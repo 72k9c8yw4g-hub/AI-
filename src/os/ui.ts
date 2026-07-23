@@ -119,8 +119,8 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .panel-h{display:flex;align-items:center;justify-content:space-between;padding:18px 16px 14px;border-bottom:1px solid var(--line-soft);font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:.01em}
 .panel-h button{background:none;border:none;font-size:20px;padding:4px 8px;color:var(--muted)}
 .panel-h button:hover{color:var(--text);background:none}
-.tabs{display:flex;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--line-soft)}
-.tabs .tab{flex:1;background:none;border:none;border-radius:9px 9px 0 0;color:var(--muted);padding:10px 6px;font-weight:600;position:relative}
+.tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--line-soft);overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tabs .tab{flex:1 0 auto;background:none;border:none;border-radius:9px 9px 0 0;color:var(--muted);padding:10px 8px;font-weight:600;position:relative;font-size:12.5px;white-space:nowrap}
 .tabs .tab:hover{color:var(--text);background:var(--panel)}
 .tabs .tab.active{color:var(--text);font-weight:700}
 .tabs .tab.active::after{content:"";position:absolute;left:12%;right:12%;bottom:-1px;height:2px;border-radius:3px;background:var(--accent)}
@@ -230,18 +230,21 @@ body{padding-bottom:60px}
   </main>
 </div>
 <div class="panel" id="decPanel">
-  <div class="panel-h"><b><i data-ic="dec"></i> 決定事項</b><button id="decClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
+  <div class="panel-h"><b><i data-ic="saved"></i> 記録</b><button id="decClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="tabs">
-    <button class="tab active" data-tab="active">Active</button>
+    <button class="tab active" data-tab="active">決定</button>
     <button class="tab" data-tab="pending">承認待ち</button>
-    <button class="tab" data-tab="archived">Archived</button>
+    <button class="tab" data-tab="archived">過去</button>
     <button class="tab" data-tab="rejected">却下</button>
+    <button class="tab" data-goto="saved">メモ</button>
+    <button class="tab" data-goto="files">ファイル</button>
   </div>
   <div class="panel-body" id="decBody"></div>
 </div>
 <div class="panel" id="setPanel">
-  <div class="panel-h"><b><i data-ic="set"></i> 役割別モデル設定</b><button id="setClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
+  <div class="panel-h"><b><i data-ic="set"></i> 設定</b><button id="setClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="panel-body">
+    <button id="openRuns" style="width:100%;margin-bottom:14px"><i data-ic="runs"></i> AI会話ログ（閲覧専用）を開く</button>
     <div class="keys" id="keyStatus"></div>
     <div id="roleList"></div>
     <div id="prefsCard"></div>
@@ -267,10 +270,10 @@ body{padding-bottom:60px}
   </div>
 </div>
 <div class="panel" id="savedPanel">
-  <div class="panel-h"><b><i data-ic="saved"></i> 保存データ</b><button id="savedClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
+  <div class="panel-h"><b><i data-ic="note"></i> メモ・記憶</b><button id="savedClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
   <div class="panel-body">
     <div class="r" style="display:flex;gap:8px;margin-bottom:14px">
-      <input id="savedInput" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit" placeholder="保存データを検索(記憶・メモ)">
+      <input id="savedInput" style="flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit" placeholder="メモ・記憶を検索">
       <button class="primary" id="savedBtn">検索</button>
     </div>
     <div id="savedBody"></div>
@@ -286,11 +289,8 @@ body{padding-bottom:60px}
 <nav id="osnav">
   <button data-scr="home"><i data-ic="home"></i><span>ホーム</span></button>
   <button data-scr="chat"><i data-ic="chat"></i><span>チャット</span></button>
-  <button data-scr="dec"><i data-ic="dec"></i><span>決定</span></button>
-  <button data-scr="saved"><i data-ic="saved"></i><span>保存</span></button>
-  <button data-scr="files"><i data-ic="files"></i><span>ファイル</span></button>
+  <button data-scr="dec"><i data-ic="saved"></i><span>記録</span></button>
   <button data-scr="search"><i data-ic="search"></i><span>検索</span></button>
-  <button data-scr="runs"><i data-ic="runs"></i><span>AI会話</span></button>
   <button data-scr="set"><i data-ic="set"></i><span>設定</span></button>
 </nav>
 <script>
@@ -310,6 +310,7 @@ home:'<path d="M3 10.6 12 3.2l9 7.4"/><path d="M5.2 9.6V20a1 1 0 0 0 1 1h11.6a1 
 chat:'<path d="M20.5 15.2a1.9 1.9 0 0 1-1.9 1.9H8l-4.5 3.6V4.9A1.9 1.9 0 0 1 5.4 3h13.2a1.9 1.9 0 0 1 1.9 1.9z"/>',
 dec:'<circle cx="12" cy="12" r="8.6"/><path d="m8.4 12.2 2.6 2.6 4.6-5"/>',
 saved:'<rect x="3.2" y="4" width="17.6" height="4.2" rx="1.2"/><path d="M5 8.4V19a1.2 1.2 0 0 0 1.2 1.2h11.6A1.2 1.2 0 0 0 19 19V8.4"/><path d="M10 12h4"/>',
+note:'<rect x="4.5" y="3.5" width="15" height="17" rx="2"/><line x1="8" y1="8.5" x2="16" y2="8.5"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="15.5" x2="13" y2="15.5"/>',
 files:'<path d="M20.9 11.5 12 20.4a4.6 4.6 0 0 1-6.5-6.5l8.3-8.3a3.1 3.1 0 0 1 4.4 4.4l-8.3 8.3a1.6 1.6 0 0 1-2.2-2.2l7.6-7.6"/>',
 search:'<circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4.2-4.2"/>',
 runs:'<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="12" r="2.6"/><path d="M8.6 6H14a3 3 0 0 1 3 3v.4M8.6 18H14a3 3 0 0 0 3-3v-.4"/>',
@@ -530,7 +531,7 @@ function decide(card,cid,act){
   api('/candidates/'+cid+'/'+act,{method:'POST',body:JSON.stringify({reason:reason})}).then(function(r){
     card.classList.add('done');
     if(act!=='approve'){ card.innerHTML='<div class="ch">却下事項に記録しました'+(reason?'（理由: '+esc(reason)+'）':'')+'</div>'; return; }
-    card.innerHTML='<div class="ch">'+svg('check')+' 決定事項に保存しました (Active)</div>';
+    card.innerHTML='<div class="ch">'+svg('check')+' 決定として記録しました(現行)</div>';
     // 憲法 Rule 4: 決定したらすぐ実行に落とせるように
     if(r.memory&&r.memory.id){
       var tb=document.createElement('button'); tb.className='approve'; tb.style.marginTop='8px'; tb.textContent='▶ 実行タスクにする';
@@ -564,7 +565,11 @@ function openDecisions(){setActiveTab('active');loadDecisions('active')}
 el('decClose').onclick=function(){showScreen('chat')};
 function setActiveTab(tab){Array.prototype.forEach.call(document.querySelectorAll('.tabs .tab'),function(x){x.classList.toggle('active',x.getAttribute('data-tab')===tab)})}
 Array.prototype.forEach.call(document.querySelectorAll('.tabs .tab'),function(t){
-  t.onclick=function(){var tab=t.getAttribute('data-tab');setActiveTab(tab);loadDecisions(tab)};
+  t.onclick=function(){
+    var goto_=t.getAttribute('data-goto');
+    if(goto_){showScreen(goto_);return;} // メモ/ファイルは記録タブ内のドリルイン(戻るで記録へ)
+    var tab=t.getAttribute('data-tab');setActiveTab(tab);loadDecisions(tab);
+  };
 });
 function loadDecisions(tab){
   el('decBody').innerHTML='<div class="empty2">読み込み中…</div>';
@@ -599,7 +604,7 @@ function renderDec(tab){
   body.innerHTML='';
   list.forEach(function(m){
     var d=document.createElement('div'); d.className='dec'+(tab==='archived'?' arch':'');
-    var badge = tab==='archived' ? '<span class="badge arch">Archived</span>' : '<span class="badge active">Active</span>';
+    var badge = tab==='archived' ? '<span class="badge arch">過去</span>' : '<span class="badge active">現行</span>';
     d.innerHTML=badge+'<span class="dm">'+esc(m.created_at||'')+'</span>'+
       '<div class="dt">'+esc(m.title||'(無題)')+'</div>'+
       '<div class="db">'+esc(m.content||'')+'</div>'+
@@ -623,7 +628,7 @@ function loadDecisionDetail(id){
     body.appendChild(back);
     var m=d.decision;
     var head=document.createElement('div'); head.className='dec'+(d.status==='archived'?' arch':'');
-    head.innerHTML=(d.status==='archived'?'<span class="badge arch">Archived</span>':'<span class="badge active">Active</span>')+
+    head.innerHTML=(d.status==='archived'?'<span class="badge arch">過去</span>':'<span class="badge active">現行</span>')+
       '<span class="dm">作成: '+esc(m.created_at||'')+'</span>'+
       '<div class="dt" style="font-size:16px">'+esc(m.title||'(無題)')+'</div>'+
       '<div class="db">'+esc(m.content||'')+'</div>'+
@@ -767,7 +772,7 @@ function makeReport(){
 }
 el('reportBtn').onclick=makeReport;
 
-el('runClose').onclick=function(){showScreen('chat')};
+el('runClose').onclick=function(){showScreen('set')}; // AI会話ログは設定配下 → 戻り先は設定
 function loadRuns(){
   el('runBody').innerHTML='<div class="empty2">読み込み中…</div>';
   api('/runs').then(function(d){
@@ -795,6 +800,7 @@ function loadRuns(){
 var ROLE_JA={mentor:'メンター兼司令塔',monitor:'特命監視官',recorder:'記録官',worker:'作業AI群(既定)',worker1:'　└ 作業AI-1',worker2:'　└ 作業AI-2',worker3:'　└ 作業AI-3'};
 var DEFAULT_MODELS={anthropic:'claude-sonnet-4-20250514',openai:'gpt-4o',gemini:'gemini-2.5-flash',groq:'llama-3.3-70b-versatile',cerebras:'llama-3.3-70b'};
 el('setClose').onclick=function(){showScreen('chat')};
+el('openRuns').onclick=function(){showScreen('runs')};
 var PROV_JA={anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',gemini:'Google (Gemini)',groq:'Groq (Llama等・爆速)',cerebras:'Cerebras (Llama等・大容量)'};
 function keyRow(p, info){
   var box=document.createElement('div'); box.className='role';
@@ -881,18 +887,33 @@ function loadBackup(){
     };
   }).catch(function(){/* 非オーナー(403)は表示しない */});
 }
-// 節目レポート自動化トグル(運用第6章・既定off)
+// 設定トグル群(設計v2): 節目レポート自動化 / 記録のメンター所見(既定OFF) / 監査カテゴリ(既定ON)
 function loadPrefs(){
   var card=el('prefsCard'); if(!card)return;
   api('/prefs').then(function(d){
-    var on=(d.prefs||{}).auto_report==='on';
-    card.innerHTML='<div class="role" style="margin-top:16px"><h4>節目レポートの自動生成 <span class="dm" style="font-weight:normal">'+(on?'ON':'OFF')+'</span></h4>'+
-      '<div class="dm" style="margin-bottom:8px">決定を承認したとき、監視官が節目レポート(議題・未解決・決定・逸脱傾向)を自動でまとめます。<b>1回ぶんのLLMを消費</b>します。既定はOFF。</div>'+
-      '<button class="save" id="arToggle">'+(on?'自動生成をOFFにする':'自動生成をONにする')+'</button></div>';
-    el('arToggle').onclick=function(){
-      el('arToggle').disabled=true;
-      api('/prefs',{method:'PUT',body:JSON.stringify({key:'auto_report',value:on?'off':'on'})}).then(function(){loadPrefs()}).catch(function(e){alert(e.message);loadPrefs()});
-    };
+    var p=d.prefs||{};
+    var ar=p.auto_report==='on', mn=p.mentor_note==='on';
+    var cats=[['mon_legal','法律'],['mon_tos','利用規約'],['mon_quality','品質'],['mon_security','セキュリティ'],['mon_inefficiency','非効率']];
+    var html='';
+    html+='<div class="role" style="margin-top:16px"><h4>節目レポートの自動生成 <span class="dm" style="font-weight:normal">'+(ar?'ON':'OFF')+'</span></h4>'+
+      '<div class="dm" style="margin-bottom:8px">決定を承認したとき、監視官が節目レポート(議題・未解決・決定・逸脱傾向)を自動でまとめます。<b>LLM+1回</b>。既定OFF。</div>'+
+      '<button class="save" data-pref="auto_report" data-next="'+(ar?'off':'on')+'">'+(ar?'OFFにする':'ONにする')+'</button></div>';
+    html+='<div class="role"><h4>記録のメンター確認 <span class="dm" style="font-weight:normal">'+(mn?'ON':'OFF')+'</span></h4>'+
+      '<div class="dm" style="margin-bottom:8px">記録ボタンで候補を作るとき、メンターが既存決定との整合性の所見を付けます。<b>LLM+1回</b>。既定OFF(記録官のみ)。</div>'+
+      '<button class="save" data-pref="mentor_note" data-next="'+(mn?'off':'on')+'">'+(mn?'OFFにする':'ONにする')+'</button></div>';
+    html+='<div class="role"><h4>監視官の監査カテゴリ</h4>'+
+      '<div class="dm" style="margin-bottom:8px">脱線・ループ・矛盾は常時ON(コア)。以下は的外れが目立つものだけOFFにできます。</div>'+
+      cats.map(function(c){var on=p[c[0]]!=='off';
+        return '<button class="'+(on?'save':'')+'" style="margin:0 6px 6px 0;padding:6px 12px;font-size:12.5px" data-pref="'+c[0]+'" data-next="'+(on?'off':'on')+'">'+c[1]+': '+(on?'ON':'OFF')+'</button>';
+      }).join('')+'</div>';
+    card.innerHTML=html;
+    Array.prototype.forEach.call(card.querySelectorAll('button[data-pref]'),function(b){
+      b.onclick=function(){
+        b.disabled=true;
+        api('/prefs',{method:'PUT',body:JSON.stringify({key:b.getAttribute('data-pref'),value:b.getAttribute('data-next')})})
+          .then(function(){loadPrefs()}).catch(function(e){alert(e.message);loadPrefs()});
+      };
+    });
   }).catch(function(){card.innerHTML=''});
 }
 function loadRoles(){
@@ -952,7 +973,9 @@ var PANELS={home:'homePanel',dec:'decPanel',runs:'runPanel',set:'setPanel',searc
 // パネルの表示だけ切り替える(ローダーは呼ばない)。詳細ビューが再描画レースで消えるのを防ぐ。
 function activatePanel(scr){
   Object.keys(PANELS).forEach(function(k){el(PANELS[k]).classList.toggle('open',k===scr)});
-  Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){b.classList.toggle('active',b.getAttribute('data-scr')===scr)});
+  // ドリルイン画面はナビ上の親タブを点灯させる(メモ/ファイル→記録、AI会話→設定)
+  var navScr=(scr==='saved'||scr==='files')?'dec':(scr==='runs'?'set':scr);
+  Array.prototype.forEach.call(document.querySelectorAll('#osnav button'),function(b){b.classList.toggle('active',b.getAttribute('data-scr')===navScr)});
 }
 function showScreen(scr){
   activatePanel(scr);
@@ -964,8 +987,8 @@ function showScreen(scr){
   if(scr==='files')loadFiles();
   if(scr==='search')setTimeout(function(){el('searchInput').focus()},50);
 }
-el('savedClose').onclick=function(){showScreen('chat')};
-el('filesClose').onclick=function(){showScreen('chat')};
+el('savedClose').onclick=function(){showScreen('dec')}; // メモ/ファイルは「記録」配下 → 戻り先も記録
+el('filesClose').onclick=function(){showScreen('dec')};
 
 // ── ファイル/写真(D1保存・写真はブラウザ側で縮小) ──
 // 画像は canvas で最大1600pxに縮小してJPEG化。それ以外はそのまま(サーバ側で上限拒否)。
@@ -1054,7 +1077,7 @@ function loadSaved(){
   var q=el('savedInput').value.trim();
   api('/saved'+(q?'?q='+encodeURIComponent(q):'')).then(function(d){
     body.innerHTML='';
-    if(!d.saved.length){body.innerHTML='<div class="empty2">保存データはまだありません。<br>会話で決定以外の記憶・メモ(kind=memory / note)が保存されるとここに出ます。</div>';return;}
+    if(!d.saved.length){body.innerHTML='<div class="empty2">メモ・記憶はまだありません。<br>会話で決定以外の記憶・メモ(kind=memory / note)が保存されるとここに出ます。</div>';return;}
     d.saved.forEach(function(m){renderMemCard(m, body)});
   }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
 }
@@ -1100,8 +1123,8 @@ function openProject(name){
     if(!decs.length){s2.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">決定はありません</div>';}
     decs.forEach(function(m){s2.appendChild(hrow(m.title||m.content.slice(0,40),m.created_at,function(){loadDecisionDetail(m.id)}))});
     body.appendChild(s2);
-    var s3=document.createElement('div'); s3.className='home-sec'; s3.innerHTML='<h3>保存データ</h3>';
-    if(!saved.length){s3.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">保存データはありません</div>';}
+    var s3=document.createElement('div'); s3.className='home-sec'; s3.innerHTML='<h3>メモ・記憶</h3>';
+    if(!saved.length){s3.innerHTML+='<div class="hcard" style="color:var(--muted);font-size:13px">メモ・記憶はありません</div>';}
     saved.forEach(function(m){renderMemCard(m, s3)});
     body.appendChild(s3);
   }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
@@ -1157,7 +1180,7 @@ function loadHome(){
     });
     body.appendChild(sec4);
     // 5. 通知(監視官の警告 + 節目レポート) — 実装準備第3-4章
-    var warns=(notif.warnings||[]).filter(function(w){return /\[(deviation|loop|contradiction|drift)\]/.test(w.content)});
+    var warns=(notif.warnings||[]).filter(function(w){return /\[(deviation|loop|contradiction)\]/.test(w.content)});
     var reps=notif.reports||[];
     var sec5=document.createElement('div'); sec5.className='home-sec';
     sec5.innerHTML='<h3>通知（監視官）</h3>';
