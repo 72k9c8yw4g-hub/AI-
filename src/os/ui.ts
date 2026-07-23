@@ -207,6 +207,13 @@ body{padding-bottom:60px}
 .stat .sm{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
 .badge.run{background:var(--ok-soft);color:var(--ok);border-color:rgba(67,214,160,.25)}
 .badge.stub{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
+/* PC4面ワークスペース: 会話一覧/チャット/記録/通知 を同時表示(実装準備第11章・ユーザー要望で復活) */
+#dock{display:none;flex:0 0 380px;flex-direction:column;border-left:1px solid var(--line-soft);overflow-y:auto;background:rgba(30,27,19,.4);-webkit-overflow-scrolling:touch}
+#dock .dk{padding:18px 16px 10px}
+#dock h3{font-size:11px;color:var(--muted);margin:0 0 11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between}
+#dock h3 a{color:var(--accent2);font-size:11px;letter-spacing:0;text-transform:none;text-decoration:none}
+#dock .empty2{padding:14px 4px;font-size:12.5px}
+@media(min-width:1280px){ #dock{display:flex} }
 @media(min-width:820px){
  .drawer{position:static;transform:none;width:300px;flex:0 0 300px;background:rgba(19,21,29,.6)}
  .scrim{display:none}
@@ -254,6 +261,10 @@ body{padding-bottom:60px}
       <button class="primary" id="sendBtn">送信</button>
     </div>
   </main>
+  <aside id="dock">
+    <div class="dk"><h3>記録（現行の決定）<a href="javascript:void(0)" id="dockDecMore">すべて見る</a></h3><div id="dockDec"></div></div>
+    <div class="dk"><h3>通知（監視官）</h3><div id="dockNotif"></div></div>
+  </aside>
 </div>
 <div class="panel" id="decPanel">
   <div class="panel-h"><b><i data-ic="saved"></i> 記録</b><button id="decClose" aria-label="閉じる"><i data-ic="close"></i></button></div>
@@ -554,7 +565,7 @@ function doSend(text){
     if(d.monitor) box.appendChild(msgNode(d.monitor));
     box.scrollTop=box.scrollHeight;
     updateBanner(d.stub);
-    loadChats();
+    loadChats(); loadDock();
   }).catch(function(e){removeTyping();var er=document.createElement('div');er.className='typing';er.textContent='エラー: '+friendly(e);box.appendChild(er)})
     .then(function(){sending=false;el('sendBtn').disabled=false;el('sendBtn').textContent='送信'});
 }
@@ -611,7 +622,7 @@ function decide(card,cid,act){
 function decideRun(card,cid,act,reason){
   var btns=card.querySelectorAll('button'); Array.prototype.forEach.call(btns,function(b){b.disabled=true});
   api('/candidates/'+cid+'/'+act,{method:'POST',body:JSON.stringify({reason:reason})}).then(function(r){
-    card.classList.add('done');
+    card.classList.add('done'); loadDock();
     if(act!=='approve'){ card.innerHTML='<div class="ch">却下事項に記録しました'+(reason?'（理由: '+esc(reason)+'）':'')+'</div>'; return; }
     card.innerHTML='<div class="ch">'+svg('check')+' 決定として記録しました(現行)</div>';
     // 憲法 Rule 4: 決定したらすぐ実行に落とせるように
@@ -636,7 +647,7 @@ function propose(){
   api('/chats/'+current+'/propose',{method:'POST'}).then(function(r){
     note.remove();
     if(!r.save||!r.candidate){var n=document.createElement('div');n.className='typing';n.textContent='保存に値する確定した結論は見つかりませんでした。';box.appendChild(n);box.scrollTop=box.scrollHeight;return;}
-    renderCandidate(r.candidate);
+    renderCandidate(r.candidate); loadDock();
   }).catch(function(e){note.remove();toastErr(e)}).then(function(){pb.disabled=false});
 }
 el('proposeBtn').onclick=propose;
@@ -811,8 +822,8 @@ el('searchClose').onclick=function(){showScreen('chat')};
 // ── 作業AI(委任 + AI会話ログ)──
 function workLogNode(log){
   var d=document.createElement('details'); d.className='worklog';
-  var inner='<summary>作業AI会話ログ（'+log.length+'ターン・閲覧専用）</summary><div class="wl">';
-  log.forEach(function(m){ inner+='<div class="wmsg"><div class="wn">'+esc(m.name||m.role)+'</div><div class="wc">'+esc(m.content)+'</div></div>'; });
+  var inner='<summary>作業AIの検討過程（草案 → 批判レビュー → 最終化・閲覧専用）</summary><div class="wl">';
+  log.forEach(function(m,i){ var label=(RUN_STEPS[i]?RUN_STEPS[i]+' — ':'')+(m.name||m.role); inner+='<div class="wmsg"><div class="wn">'+esc(label)+'</div><div class="wc">'+esc(m.content)+'</div></div>'; });
   inner+='</div>'; d.innerHTML=inner; return d;
 }
 function delegate(){
@@ -849,33 +860,71 @@ function makeReport(){
     var t=el('rtyping'); if(t)t.remove();
     var mon=document.createElement('div'); mon.className='mon';
     mon.innerHTML='<span class="ml">'+svg('report')+' 特命監視官レポート</span>'+esc(r.report.content);
+    loadDock();
     box.appendChild(mon); box.scrollTop=box.scrollHeight;
   }).catch(function(e){var t=el('rtyping');if(t)t.remove();toastErr(e)}).then(function(){rb.disabled=false});
 }
 el('reportBtn').onclick=makeReport;
 
 el('runClose').onclick=function(){showScreen('set')}; // AI会話ログは設定配下 → 戻り先は設定
+// 作業AIの3ステップに人間が読めるラベルを付ける(固定3ターン: 草案→批判レビュー→最終化)
+var RUN_STEPS=['ステップ1 · 草案','ステップ2 · 批判レビュー','ステップ3 · 最終化'];
+function runStatusBadge(st){
+  if(st==='done')return '<span class="badge active">完了</span>';
+  if(st==='failed')return '<span class="badge arch">失敗</span>';
+  return '<span class="badge stub">実行中</span>';
+}
+function fillRunTurns(wl,rd){
+  wl.innerHTML='';
+  rd.log.forEach(function(m,i){
+    var label=(RUN_STEPS[i]?RUN_STEPS[i]+' — ':'')+(m.name||m.role);
+    var x=document.createElement('div'); x.className='wmsg';
+    x.innerHTML='<div class="wn">'+esc(label)+'</div><div class="wc">'+esc(m.content)+'</div>';
+    wl.appendChild(x);
+  });
+  if(rd.run&&rd.run.summary){
+    var s=document.createElement('div'); s.className='wmsg';
+    s.innerHTML='<div class="wn">メンター整理 — あなたへの提示</div><div class="wc">'+esc(rd.run.summary)+'</div>';
+    wl.appendChild(s);
+  }
+}
+// AI会話ログ: チャット別にくくり、各runはステータス+ステップ付きで読める形に
 function loadRuns(){
   el('runBody').innerHTML='<div class="empty2">読み込み中…</div>';
-  api('/runs').then(function(d){
+  Promise.all([api('/runs'),api('/chats')]).then(function(rs){
+    var d=rs[0]; var chatMap={}; (rs[1].chats||[]).forEach(function(c){chatMap[c.id]=c});
     if(!d.runs.length){el('runBody').innerHTML='<div class="empty2">作業AIのログはまだありません。<br>会話で作業AIにタスクを振ると、ここに残ります。</div>';return;}
     var body=el('runBody'); body.innerHTML='';
-    d.runs.forEach(function(r){
-      var det=document.createElement('details'); det.className='worklog'; det.style.marginBottom='10px';
-      det.innerHTML='<summary>'+esc(r.task)+'<br><span style="font-size:11px;opacity:.7">'+esc(r.created_at)+' · '+esc(r.status)+'</span></summary><div class="wl"><div class="empty2" style="padding:10px">開いて読み込み中…</div></div>';
-      det.addEventListener('toggle',function(){
-        if(det.open && det.dataset.loaded!=='1'){
-          det.dataset.loaded='1';
-          api('/runs/'+r.id).then(function(rd){
-            var wl=det.querySelector('.wl'); wl.innerHTML='';
-            rd.log.forEach(function(m){ var x=document.createElement('div'); x.className='wmsg'; x.innerHTML='<div class="wn">'+esc(m.name||m.role)+'</div><div class="wc">'+esc(m.content)+'</div>'; wl.appendChild(x); });
-            if(rd.run&&rd.run.summary){ var s=document.createElement('div'); s.className='wmsg'; s.innerHTML='<div class="wn">メンター整理（ユーザーへ提示）</div><div class="wc">'+esc(rd.run.summary)+'</div>'; wl.appendChild(s); }
-          }).catch(function(e){det.querySelector('.wl').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
-        }
+    // チャットごとにグループ化(新しいrun順を保つ)
+    var groups={}, order=[];
+    d.runs.forEach(function(r){var k=r.chat_id||0; if(!groups[k]){groups[k]=[];order.push(k);} groups[k].push(r);});
+    order.forEach(function(k){
+      var sec=document.createElement('div'); sec.className='home-sec';
+      var c=chatMap[k];
+      var h=document.createElement('h3');
+      h.textContent=c?c.title:'(削除された会話)';
+      if(c){
+        var lk=document.createElement('a'); lk.href='javascript:void(0)'; lk.textContent='会話を開く';
+        lk.style.cssText='margin-left:10px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent2)';
+        lk.onclick=function(){showScreen('chat');openChat(c.id,c.title)};
+        h.appendChild(lk);
+      }
+      sec.appendChild(h);
+      groups[k].forEach(function(r){
+        var det=document.createElement('details'); det.className='worklog'; det.style.marginBottom='10px';
+        det.innerHTML='<summary>'+runStatusBadge(r.status)+' <b style="font-family:var(--serif)">'+esc(r.task.slice(0,90))+'</b><br><span style="font-size:11px;opacity:.7">'+esc((r.created_at||'').slice(0,16))+'</span></summary><div class="wl"><div class="empty2" style="padding:10px">開いて読み込み中…</div></div>';
+        det.addEventListener('toggle',function(){
+          if(det.open && det.dataset.loaded!=='1'){
+            det.dataset.loaded='1';
+            api('/runs/'+r.id).then(function(rd){ fillRunTurns(det.querySelector('.wl'),rd); })
+              .catch(function(e){det.querySelector('.wl').innerHTML='<div class="empty2">'+esc(friendly(e))+'</div>'});
+          }
+        });
+        sec.appendChild(det);
       });
-      body.appendChild(det);
+      body.appendChild(sec);
     });
-  }).catch(function(e){el('runBody').innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
+  }).catch(function(e){el('runBody').innerHTML='<div class="empty2">'+esc(friendly(e))+'</div>'});
 }
 
 // ── 役割別モデル設定 ──
@@ -1290,6 +1339,31 @@ function loadHome(){
   }).catch(function(e){body.innerHTML='<div class="empty2">'+esc(e.message)+'</div>'});
 }
 
+// ── PC4面ドック(≥1280px): 会話一覧/チャット/記録/通知の同時表示 ──
+function loadDock(){
+  var dk=el('dock'); if(!dk)return;
+  if(!window.matchMedia||!window.matchMedia('(min-width:1280px)').matches)return;
+  api('/decisions').then(function(d){
+    var box=el('dockDec'); box.innerHTML='';
+    var pend=(d.pending||[]).length;
+    if(pend){ box.appendChild(hrow('承認待ちの候補が '+pend+' 件','要対応',function(){showScreen('dec');setActiveTab('pending');loadDecisions('pending')})); }
+    var act=d.active||[];
+    if(!act.length&&!pend){ box.innerHTML='<div class="empty2">有効な決定はまだありません</div>'; return; }
+    act.slice(0,6).forEach(function(m){
+      box.appendChild(hrow(m.title||m.content.slice(0,40),(m.created_at||'').slice(0,10),function(){showScreen('dec')}));
+    });
+  }).catch(function(){});
+  api('/notifications').then(function(n){
+    var box=el('dockNotif'); box.innerHTML='';
+    var reps=(n.reports||[]).slice(0,2), warns=(n.warnings||[]).slice(0,3);
+    if(!reps.length&&!warns.length){ box.innerHTML='<div class="empty2">新しい通知はありません</div>'; return; }
+    reps.forEach(function(r){ var x=document.createElement('div'); x.className='mon'; x.style.cssText='align-self:stretch;max-width:100%;margin-bottom:8px'; x.innerHTML='<span class="ml">'+svg('report')+' 節目レポート · '+esc((r.created_at||'').slice(0,16))+'</span>'+esc(r.content.slice(0,220)); box.appendChild(x); });
+    warns.forEach(function(w){ var x=document.createElement('div'); x.className='mon'; x.style.cssText='align-self:stretch;max-width:100%;margin-bottom:8px'; x.innerHTML='<span class="ml">'+svg('warn')+' 警告 · '+esc((w.created_at||'').slice(0,16))+'</span>'+esc(w.content.slice(0,220)); box.appendChild(x); });
+  }).catch(function(){});
+}
+el('dockDecMore').onclick=function(){showScreen('dec')};
+window.addEventListener('resize',function(){loadDock()});
+
 // ── PWA: サービスワーカー登録 + インストールボタン ──
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('/os/sw.js',{scope:'/os/'}).catch(function(){}); }
 var deferredPrompt=null;
@@ -1355,7 +1429,7 @@ function showOnboarding(){
   }
   render();
 }
-renderIcons(); renderMessages([]); loadStatus(); loadChats(); showScreen('home');
+renderIcons(); renderMessages([]); loadStatus(); loadChats(); showScreen('home'); loadDock();
 if(!localStorage.getItem('os_onb_v1'))showOnboarding();
 </script>
 </body>
