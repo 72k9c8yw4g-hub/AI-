@@ -138,7 +138,7 @@ function errorHint(msg: string): string {
 function stubReply(history: ChatMsg[]): string {
   const last = [...history].reverse().find((m) => m.role === "user");
   const q = last ? last.content.slice(0, 60) : "";
-  return `(スタブ応答) まだ LLM の API キーが接続されていません。設定で ANTHROPIC_API_KEY などを登録すると、ここに実際の思考が入ります。\n受け取った論点: ${q || "(なし)"}`;
+  return `(体験モード) いまはサンプル応答です。設定から無料のAPIキーを登録すると、本物のAIがここで一緒に考えます。\n受け取った論点: ${q || "(なし)"}`;
 }
 
 // そのキーで実際に使えるモデル名一覧をプロバイダAPIから取得する(⚙️の候補表示用)。

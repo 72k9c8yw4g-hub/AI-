@@ -101,12 +101,26 @@ a:hover{text-decoration:underline}
 .oldmem{opacity:.5}
 a.btnlike{display:inline-block;background:var(--accent);color:#1c1810;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:700;text-decoration:none;box-shadow:var(--sh-sm);transition:filter var(--tap),transform var(--tap)}
 a.btnlike:hover{filter:brightness(1.07);transform:translateY(-1px);text-decoration:none}
+.ovl{position:fixed;inset:0;background:rgba(10,9,5,.62);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:80;display:flex;align-items:center;justify-content:center;padding:22px;opacity:0;transition:opacity .18s}
+.ovl.show{opacity:1}
+.mdl{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--sh-lg);max-width:420px;width:100%;padding:20px;transform:translateY(8px) scale(.98);transition:transform .18s}
+.ovl.show .mdl{transform:none}
+.mdl h3{margin:0 0 8px;font-family:var(--serif);font-size:17px;font-weight:700}
+.mdl .mm{color:var(--sub);font-size:14px;line-height:1.75;white-space:pre-wrap}
+.mdl .mb{display:flex;gap:9px;margin-top:16px;justify-content:flex-end}
+.mdl .mb button{min-width:92px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 15px;cursor:pointer;font:inherit;font-weight:600}
+.mdl .mb button.primary{background:var(--accent);color:#1c1810;border-color:transparent;font-weight:700}
+#toasts{position:fixed;left:0;right:0;bottom:24px;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:90;pointer-events:none;padding:0 16px}
+.toast{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:11px;box-shadow:var(--sh);padding:11px 15px;font-size:13.5px;max-width:480px;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:none}
+.toast.err{border-left-color:var(--danger)}
 </style>
 </head>
 <body>
 <header><svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg><div><h1>Dscribe <span class="sub">– Second Brain for Claude</span></h1></div><div class="sub" id="acct"></div><a id="osLink" href="#"><svg class="ic" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 10.5 13.5"/><path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/></svg> 意思決定OS</a></header>
 <nav id="nav"></nav>
 <main id="main"><div class="empty">読み込み中…</div></main>
+<div id="toasts"></div>
 <dialog id="dlg"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b id="dlgTitle"></b><button class="ghost" onclick="document.getElementById('dlg').close()">✕ 閉じる</button></div><div class="viewer" id="dlgBody"></div><div style="margin-top:8px;text-align:center"><button class="primary" id="dlgMore" style="display:none">続きを読む</button></div></dialog>
 <script>
 "use strict";
@@ -141,6 +155,29 @@ key:'<circle cx="7.5" cy="15.5" r="3.6"/><path d="m10.1 13 8.4-8.4"/><path d="m1
 trash:'<path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>'
 };
 function svg(name,cls){ return '<svg class="ic'+(cls?" "+cls:"")+'" viewBox="0 0 24 24" aria-hidden="true">'+(ICONS[name]||"")+'</svg>'; }
+// トースト/確認モーダル(ブラウザ標準のalert/confirmは使わない)
+function toast(msg,isErr){
+  var box=el("toasts"); if(!box)return;
+  var t=document.createElement("div"); t.className="toast"+(isErr?" err":""); t.textContent=msg;
+  box.appendChild(t);
+  requestAnimationFrame(function(){t.classList.add("show")});
+  setTimeout(function(){t.classList.remove("show");setTimeout(function(){t.remove()},250)},2800);
+}
+function toastErr(e){ toast("エラー: "+((e&&e.message)||e), true); }
+function osConfirm(msg,title,okLabel){
+  return new Promise(function(resolve){
+    var ovl=document.createElement("div"); ovl.className="ovl";
+    var m=document.createElement("div"); m.className="mdl";
+    m.innerHTML=(title?"<h3>"+esc(title)+"</h3>":"")+'<div class="mm">'+esc(msg)+'</div>'+
+      '<div class="mb"><button id="mdlNo">キャンセル</button><button class="primary" id="mdlOk">'+esc(okLabel||"実行する")+"</button></div>";
+    ovl.appendChild(m); document.body.appendChild(ovl);
+    requestAnimationFrame(function(){ovl.classList.add("show")});
+    function close(v){ovl.classList.remove("show");setTimeout(function(){ovl.remove()},180);resolve(v);}
+    m.querySelector("#mdlOk").onclick=function(){close(true)};
+    m.querySelector("#mdlNo").onclick=function(){close(false)};
+    ovl.onclick=function(ev){if(ev.target===ovl)close(false)};
+  });
+}
 
 function renderNav(){
   el("nav").innerHTML = TABS.map(function(t){
@@ -343,7 +380,7 @@ function viewImport(){
 function logImp(msg, cls){ el("impLog").innerHTML += '<div class="'+(cls||"")+'">'+esc(msg)+'</div>'; }
 function doImport(){
   var fc = el("fConv").files[0], fp = el("fProj").files[0];
-  if(!fc && !fp){ alert("ファイルを選択してください"); return; }
+  if(!fc && !fp){ toast("ファイルを選択してください", true); return; }
   el("impLog").innerHTML = "";
   var chain = Promise.resolve();
   if(fp) chain = chain.then(function(){ return importProjects(fp); });
@@ -442,26 +479,30 @@ function loadMembers(){
 }
 function resetMember(id){
   var self = ME && id === ME.id;
-  if(!confirm(self
+  osConfirm(self
     ? "自分のアクセスURLを再発行しますか?(今のURLは使えなくなり、新しいURLに自動で移動します。コネクタのURLも登録し直しが必要です)"
-    : "このメンバーのアクセスURLを再発行しますか?(古いURLは使えなくなります)")) return;
+    : "このメンバーのアクセスURLを再発行しますか?(古いURLは使えなくなります)","アクセスURLの再発行","再発行する").then(function(ok){
+  if(!ok) return;
   api("/users/"+id+"/reset", {method:"POST"}).then(function(r){
     if(self){ location.href = r.app_url; return; }
     el("rst"+id).innerHTML = '<div class="meta">新しいダッシュボードURL(本人にだけ渡してください):</div>'
       + '<pre class="code" id="rstu'+id+'">'+esc(r.app_url)+'</pre>'
       + '<button class="primary" onclick="copyText(\\'rstu'+id+'\\')">コピー</button>';
   }).catch(alertErr);
+  });
 }
 function delMember(id){
-  if(!confirm("このメンバーとそのデータ(記憶・タスク・チャット履歴)を完全に削除しますか?取り消せません。")) return;
-  api("/users/"+id, {method:"DELETE"}).then(loadMembers).catch(alertErr);
+  osConfirm("このメンバーとそのデータ(記憶・タスク・チャット履歴)を完全に削除しますか?取り消せません。","メンバーの削除","完全に削除する").then(function(ok){
+    if(!ok) return;
+    api("/users/"+id, {method:"DELETE"}).then(loadMembers).catch(alertErr);
+  });
 }
 function copyText(id){
-  navigator.clipboard.writeText(el(id).textContent).then(function(){ alert("コピーしました"); });
+  navigator.clipboard.writeText(el(id).textContent).then(function(){ toast("コピーしました"); });
 }
 
 function showErr(e){ main('<div class="card err">エラー: '+esc(e.message)+'<br><span class="meta">URLのトークンが正しいか確認してください</span></div>'); }
-function alertErr(e){ alert("エラー: " + e.message); }
+function alertErr(e){ toastErr(e); }
 
 var VIEWS = {home:viewHome, tasks:viewTasks, memories:viewMemories, chats:viewChats, search:viewSearch, import:viewImport, export:viewExport, setup:viewSetup};
 var READONLY_NOTE = "このダッシュボードは閲覧専用です。追加・変更・削除は Claude との会話で頼んでください(第二の脳の管理者は AI)。";
@@ -546,7 +587,7 @@ a{color:var(--accent2)}
 "use strict";
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function el(id){ return document.getElementById(id); }
-function copyText(id){ navigator.clipboard.writeText(el(id).textContent).then(function(){ alert("コピーしました"); }); }
+function copyText(id){ navigator.clipboard.writeText(el(id).textContent).then(function(){ var t=document.createElement("div"); t.textContent="コピーしました"; t.style.cssText="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#252118;color:#ece4d3;border:1px solid #342f22;border-left:3px solid #93a06a;border-radius:11px;padding:10px 16px;font-size:13.5px;z-index:99"; document.body.appendChild(t); setTimeout(function(){t.remove()},2200); }); }
 document.getElementById("email").addEventListener("keydown", function(e){ if(e.key === "Enter") setup(); });
 function setup(){
   var email = el("email").value.trim();
@@ -629,7 +670,7 @@ a{color:var(--accent2)}
 "use strict";
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function el(id){ return document.getElementById(id); }
-function copyText(id){ navigator.clipboard.writeText(el(id).textContent).then(function(){ alert("コピーしました"); }); }
+function copyText(id){ navigator.clipboard.writeText(el(id).textContent).then(function(){ var t=document.createElement("div"); t.textContent="コピーしました"; t.style.cssText="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#252118;color:#ece4d3;border:1px solid #342f22;border-left:3px solid #93a06a;border-radius:11px;padding:10px 16px;font-size:13.5px;z-index:99"; document.body.appendChild(t); setTimeout(function(){t.remove()},2200); }); }
 document.getElementById("email").addEventListener("keydown", function(e){ if(e.key === "Enter") join(); });
 function join(){
   var email = el("email").value.trim();
